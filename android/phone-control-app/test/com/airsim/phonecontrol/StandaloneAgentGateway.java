@@ -9,6 +9,7 @@ final class StandaloneAgentGateway {
     String pushStatus() { return "{}"; }
     String debugSnapshot() { return "{}"; }
     String registerPairing(String value) { return "{}"; }
+    void clearPairing() {}
     void sendCallEvent(String value) {}
     void sendSMSEvent(String value) {}
     AgentClient.ForwardResponse forward(String method, String path, String body) {

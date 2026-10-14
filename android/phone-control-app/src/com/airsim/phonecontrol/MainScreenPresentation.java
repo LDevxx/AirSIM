@@ -96,6 +96,7 @@ public final class MainScreenPresentation {
         String value = line.toLowerCase(java.util.Locale.ROOT);
         if (value.contains("pairing_completed")) return "VoWLAN 配对完成";
         if (value.contains("pairing_started")) return "等待 iPhone 配对";
+        if (value.contains("pairing_cleared")) return "iPhone 配对凭据已清除";
         if (value.contains("watchdog_created")) return "Agent 守护服务已启动";
         if (value.contains("watchdog_configuration_available")) return "Linux Agent 配置已载入";
         if (value.contains("application_started")) return "应用服务已启动";

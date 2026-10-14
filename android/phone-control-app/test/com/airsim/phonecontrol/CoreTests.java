@@ -551,6 +551,8 @@ public final class CoreTests {
 						"2026-09-25T10:11:12Z http_request_finished method=GET path=/api/android/status status=200"));
 		assertEquals("VoWLAN 配对完成",
 				MainScreenPresentation.activitySummary("pairing_completed peer=iphone"));
+		assertEquals("iPhone 配对凭据已清除",
+				MainScreenPresentation.activitySummary("standalone_pairing_cleared"));
 		assertEquals("Shizuku PCM 桥已连接",
 				MainScreenPresentation.activitySummary("shizuku_user_service_connected uid=2000"));
 		assertEquals("Agent 守护服务已启动",

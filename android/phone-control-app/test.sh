@@ -3,6 +3,11 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 OUT="$ROOT/build/jvm-test"
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/javac" ]; then
+  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+    JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || true)
+  fi
+fi
 JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}
 JAVAC="$JAVA_HOME/bin/javac"
 JAVA="$JAVA_HOME/bin/java"
@@ -80,6 +85,12 @@ assert_contains "$ROOT/src/com/airsim/phonecontrol/MainActivity.java" \
 assert_contains "$ROOT/src/com/airsim/phonecontrol/MainActivity.java" \
   'BridgeLog.clear()' \
   'the Android app cannot clear captured diagnostics'
+assert_contains "$ROOT/src/com/airsim/phonecontrol/MainActivity.java" \
+  'clearPairingCredentials' \
+  'the Android app cannot clear stored pairing credentials'
+assert_contains "$ROOT/src/com/airsim/phonecontrol/StandaloneAgentStore.java" \
+  'void clear()' \
+  'the standalone Agent store cannot clear registration credentials'
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

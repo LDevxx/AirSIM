@@ -23,6 +23,7 @@ import java.util.concurrent.Executors;
 /** AVF-free foreground Agent: Relay registration, heartbeat and command execution. */
 public final class StandaloneAgentService extends Service {
     private static final ConcurrentLinkedQueue<String> CALL_EVENTS = new ConcurrentLinkedQueue<>();
+    private static volatile StandaloneAgentService instance;
     private final ExecutorService worker = Executors.newFixedThreadPool(2);
     private final Set<String> completedCommands = new LinkedHashSet<>();
     private final NotificationUpdateGate notificationGate = new NotificationUpdateGate();
@@ -47,6 +48,7 @@ public final class StandaloneAgentService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        instance = this;
         store = new StandaloneAgentStore(this);
         relay = new StandaloneRelayClient();
         startForeground(BridgeNotification.WATCHDOG_ID,
@@ -254,7 +256,29 @@ public final class StandaloneAgentService extends Service {
         notificationGate.published(detail, now);
     }
 
+    public static void resetPairing(Context context) {
+        CALL_EVENTS.clear();
+        StandaloneAgentService active = instance;
+        if (active != null) {
+            active.disconnectRelay();
+        }
+    }
+
+    private void disconnectRelay() {
+        syncedRegistrationHash = 0;
+        lastHeartbeat = 0;
+        lastCommandPoll = 0;
+        commandChannelConnected = false;
+        StandaloneWebSocket socket = commandSocket;
+        commandSocket = null;
+        if (socket != null) socket.close();
+        StandaloneCloudMediaManager.get(this).close();
+        update("内置 Agent 在线 · 等待 iPhone 配对");
+        BridgeLog.info("standalone_relay_disconnected_on_pairing_clear");
+    }
+
     @Override public void onDestroy() {
+        if (instance == this) instance = null;
         running = false;
         StandaloneWebSocket socket = commandSocket;
         if (socket != null) socket.close();

@@ -48,6 +48,15 @@ final class StandaloneAgentStore {
         return value;
     }
 
+    synchronized void clear() {
+        preferences.edit()
+                .remove(REGISTRATION)
+                .remove(LAST_ERROR)
+                .remove(LAST_HEARTBEAT)
+                .remove(LAST_SEEN)
+                .apply();
+    }
+
     boolean configured() {
         JSONObject value = registration();
         if (value != null && value.optBoolean("local_mode", false)) return true;

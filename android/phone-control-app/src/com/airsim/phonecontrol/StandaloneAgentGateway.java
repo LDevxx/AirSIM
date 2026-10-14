@@ -78,6 +78,19 @@ final class StandaloneAgentGateway {
         return new JSONObject().put("configured", true).put("device_id_hint", hint).toString();
     }
 
+    void clearPairing() {
+        store.clear();
+        synchronized (commandsLock) {
+            commandResults.clear();
+        }
+        synchronized (callsLock) {
+            activeCall = null;
+        }
+        agentEvents.advance();
+        callEvents.advance();
+        BridgeLog.info("standalone_pairing_cleared");
+    }
+
     void sendCallEvent(String json) throws Exception {
         JSONObject event = new JSONObject(json);
         applyCallEvent(event);

@@ -501,6 +501,27 @@ public final class MainActivity extends Activity {
         agentCard.addView(save, matchWithTop(12));
         root.addView(agentCard, matchWithTop(10));
 
+        root.addView(sectionTitle("iPhone 配对凭证"), matchWithTop(22));
+        LinearLayout pairingCredentialCard = card(SURFACE, 22);
+        pairingCredentialCard.setOrientation(LinearLayout.VERTICAL);
+        pairingCredentialCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        boolean hasPairing = hasStoredPairingCredentials();
+        pairingCredentialCard.addView(label(hasPairing ? "已保存 iPhone 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
+                14, hasPairing ? PRIMARY : MUTED, Gravity.START));
+        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；iPhone 需要重新配对才能呼叫。"),
+                matchWithTop(6));
+        TextView clearPairingBtn = secondaryButton("清除 iPhone 配对凭据");
+        clearPairingBtn.setTextColor(hasPairing ? DANGER : MUTED);
+        clearPairingBtn.setEnabled(hasPairing);
+        clearPairingBtn.setOnClickListener(ignored -> new AlertDialog.Builder(this)
+                .setTitle("清除 iPhone 配对凭据？")
+                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 iPhone 需要重新配对才能控制通话。")
+                .setPositiveButton("清除凭据", (dialog, which) -> clearPairingCredentials())
+                .setNegativeButton("取消", null)
+                .show());
+        pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
+        root.addView(pairingCredentialCard, matchWithTop(10));
+
 		root.addView(sectionTitle("短信收件箱兜底"), matchWithTop(22));
 		LinearLayout smsCard = card(SURFACE, 22);
 		smsCard.setOrientation(LinearLayout.VERTICAL);
@@ -613,6 +634,29 @@ public final class MainActivity extends Activity {
         root.addView(debugEnabled, matchWithTop(14));
         refreshShizukuStatus();
         return scroll(root);
+    }
+
+    private boolean hasStoredPairingCredentials() {
+        if (VoWLANPairingStore.configured(this)) return true;
+        if (RuntimeMode.isStandalone(this)) {
+            return new StandaloneAgentStore(this).configured();
+        }
+        return false;
+    }
+
+    private void clearPairingCredentials() {
+        VoWLANPairingStore.clear(this);
+        if (RuntimeMode.isStandalone(this)) {
+            StandaloneAgentGateway.get(this).clearPairing();
+            StandaloneAgentService.resetPairing(this);
+        }
+        refreshAgent(true);
+        toast("iPhone 配对凭据已清除");
+        if (currentPage == Page.SETTINGS) {
+            showPage(Page.SETTINGS);
+        } else if (currentPage == Page.STATUS) {
+            showPage(Page.STATUS);
+        }
     }
 
     private void openPairingPage() {
