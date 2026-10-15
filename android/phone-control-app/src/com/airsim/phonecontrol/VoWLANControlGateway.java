@@ -54,7 +54,7 @@ public final class VoWLANControlGateway implements Closeable {
         String[] pathForLog = {"unknown"};
         VoWLANPeerLifecycle.run(peer, () -> {
             peer.setSoTimeout(75_000);
-            if (!(peer.getInetAddress().isSiteLocalAddress() || peer.getInetAddress().isLinkLocalAddress())) {
+            if (!VoWLANNetworkPolicy.isAllowedPeer(peer.getInetAddress())) {
                 respond(peer, 403, "{\"error\":\"private_peer_required\"}");
                 return;
             }

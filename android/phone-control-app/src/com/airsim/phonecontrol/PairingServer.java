@@ -83,7 +83,7 @@ public final class PairingServer implements Closeable {
     private boolean handle(Socket peer, PairingSession created) throws Exception {
         peer.setSoTimeout(8_000);
         InetAddress remote = peer.getInetAddress();
-        if (!(remote.isSiteLocalAddress() || remote.isLinkLocalAddress() || remote.isLoopbackAddress())) {
+        if (!VoWLANNetworkPolicy.isAllowedPeer(remote)) {
             BridgeLog.info("pairing_claim_rejected reason=non_private_peer");
             respond(peer, 403, "{\"error\":\"private_network_required\"}");
             return false;
@@ -227,7 +227,7 @@ public final class PairingServer implements Closeable {
             while (addresses.hasMoreElements()) {
                 InetAddress address = addresses.nextElement();
                 String host = address.getHostAddress();
-                if (address instanceof Inet4Address && address.isSiteLocalAddress() && !host.startsWith("10.185.5.")) return host;
+                if (address instanceof Inet4Address && VoWLANNetworkPolicy.isAllowedPeer(address) && !host.startsWith("10.185.5.")) return host;
             }
         }
         throw new IOException("未找到 VoWLAN IPv4 地址，请连接 Wi-Fi 或开启移动热点");
@@ -236,7 +236,8 @@ public final class PairingServer implements Closeable {
     private static int interfacePriority(String name) {
         if (name.startsWith("swlan") || name.startsWith("ap")) return 0;
         if (name.startsWith("wlan")) return 1;
-        return 2;
+        if (name.startsWith("tun") || name.startsWith("tailscale") || name.startsWith("wg")) return 2;
+        return 3;
     }
 
     private static String safeMessage(Exception error) {

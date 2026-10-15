@@ -24,7 +24,11 @@ final class VoWLANPortBinder {
         ServerSocket socket = new ServerSocket();
         try {
             socket.setReuseAddress(true);
-            socket.bind(new InetSocketAddress(address, port), backlog);
+            // If address is loopback (e.g. in tests), keep loopback binding.
+            // Otherwise bind wildcard so local Wi-Fi and Tailscale/VPN interfaces both accept connections.
+            java.net.InetAddress bindTarget = (address != null && address.isLoopbackAddress())
+                    ? address : null;
+            socket.bind(new InetSocketAddress(bindTarget, port), backlog);
             return socket;
         } catch (IOException | RuntimeException error) {
             socket.close();

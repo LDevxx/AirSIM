@@ -286,7 +286,7 @@ public final class MainActivity extends Activity {
 
     private View statusPage() {
         LinearLayout root = pageRoot();
-        root.addView(pageTitle("AirSIM Bridge", "运行中"));
+        root.addView(pageTitle("AirSIM Bridge", "v" + appVersionName() + " · 运行中"));
 
         boolean paired = VoWLANPairingStore.configured(this);
         LinearLayout hero = card(SURFACE_HIGH, 24);
@@ -632,8 +632,26 @@ public final class MainActivity extends Activity {
             toast(enabled ? "Debug 日志已开启" : "Debug 日志已关闭");
         });
         root.addView(debugEnabled, matchWithTop(14));
+
+        root.addView(sectionTitle("关于"), matchWithTop(22));
+        LinearLayout aboutCard = card(SURFACE, 22);
+        aboutCard.setOrientation(LinearLayout.VERTICAL);
+        aboutCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        String runtimeLabel = standaloneRuntime ? "Standalone 内置模式" : "AVF 模式";
+        aboutCard.addView(label("AirSIM Bridge · v" + appVersionName(), 15, TEXT, Gravity.START));
+        aboutCard.addView(description("运行架构：" + runtimeLabel + " · 跨设备通话、短信和 VoWLAN"), matchWithTop(4));
+        root.addView(aboutCard, matchWithTop(10));
+
         refreshShizukuStatus();
         return scroll(root);
+    }
+
+    private String appVersionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            return "0.9.7.1";
+        }
     }
 
     private boolean hasStoredPairingCredentials() {

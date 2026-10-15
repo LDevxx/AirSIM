@@ -1,5 +1,7 @@
 package com.airsim.phonecontrol;
 
+import java.net.InetAddress;
+
 public final class VoWLANNetworkPolicy {
     private VoWLANNetworkPolicy() {}
 
@@ -20,11 +22,13 @@ public final class VoWLANNetworkPolicy {
     }
 
     public static boolean isVoWLANInterface(String name, String host) {
-        if (!isPrivateIPv4(host) || name == null) return false;
-        return isHotspotInterface(name, host) || name.startsWith("wlan");
+        if (name == null || host == null) return false;
+        if (!isPrivateIPv4(host) && !isTailscaleIPv4(host)) return false;
+        return isHotspotInterface(name, host) || name.startsWith("wlan")
+                || name.startsWith("tun") || name.startsWith("tailscale") || name.startsWith("wg");
     }
 
-    private static boolean isPrivateIPv4(String host) {
+    public static boolean isPrivateIPv4(String host) {
         if (host == null) return false;
         String[] fields = host.split("\\.");
         if (fields.length != 4) return false;
@@ -40,6 +44,31 @@ public final class VoWLANNetworkPolicy {
         } catch (NumberFormatException error) {
             return false;
         }
+    }
+
+    public static boolean isTailscaleIPv4(String host) {
+        if (host == null) return false;
+        String[] fields = host.split("\\.");
+        if (fields.length != 4) return false;
+        try {
+            int first = Integer.parseInt(fields[0]);
+            int second = Integer.parseInt(fields[1]);
+            for (String field : fields) {
+                int value = Integer.parseInt(field);
+                if (value < 0 || value > 255) return false;
+            }
+            return first == 100 && second >= 64 && second <= 127;
+        } catch (NumberFormatException error) {
+            return false;
+        }
+    }
+
+    public static boolean isAllowedPeer(InetAddress address) {
+        if (address == null) return false;
+        if (address.isSiteLocalAddress() || address.isLinkLocalAddress() || address.isLoopbackAddress()) {
+            return true;
+        }
+        return isTailscaleIPv4(address.getHostAddress());
     }
 
     public static boolean shouldAdvertise(

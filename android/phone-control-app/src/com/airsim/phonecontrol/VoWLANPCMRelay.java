@@ -63,7 +63,7 @@ public final class VoWLANPCMRelay implements Closeable {
         PCMStats downlink = new PCMStats();
         try (peer) {
             peer.setSoTimeout(5_000);
-            if (!(peer.getInetAddress().isSiteLocalAddress() || peer.getInetAddress().isLinkLocalAddress())) {
+            if (!VoWLANNetworkPolicy.isAllowedPeer(peer.getInetAddress())) {
                 throw new SecurityException("private peer required");
             }
             BufferedInputStream peerInput = new BufferedInputStream(peer.getInputStream());
