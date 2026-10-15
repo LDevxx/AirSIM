@@ -2,7 +2,7 @@
 
 该目录包含 AirSIM Android 端的共享实现以及旧 AVF 兼容 Manifest。新安装推荐使用根目录的 [Android Standalone APK](../../android-standalone/README.md)，由同一 APK 内置 Agent；只有兼容旧部署时才使用这里的 AVF 版构建入口。
 
-当前正式应用版本为 [`v0.9.6`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.6)（Android `versionCode 79`）；配套 AVF Agent 当前为 [`v0.4.6`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.4.6)。维护者云端模式使用 `https://airsim-push.remotepilot.site`，不得改用 DJOneHub 的 `https://push.remotepilot.site`。自行签名的 Apple 客户端需要部署与其 Bundle ID、APNs 凭据匹配的独立 Relay。
+当前正式应用版本为 [`v0.9.7.1`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.1)（Android `versionCode 81`），包含 Android 10–13 兼容性修复，推荐升级；新安装优先 Standalone。配套 Linux AVF Agent 保持 [`v0.4.6`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.4.6)。维护者云端模式使用 `https://airsim-push.remotepilot.site`，不得改用 DJOneHub 的 `https://push.remotepilot.site`。自行签名的 Apple 客户端需要部署与其 Bundle ID、APNs 凭据匹配的独立 Relay。
 
 ## 主要职责
 
@@ -17,6 +17,12 @@
 - 通过独立 AVF installerd 检查、安装和回滚签名 Debian 包。
 - 启动时检测 AVF、AOSP Linux Terminal 和 AVF 私网状态，并提供可复制的一键安装命令。
 - 状态首页明确显示当前使用 VoWLAN、云端模式、云端异常或离线；仅配置 Relay 不会被误报为已经在线。
+
+## 默认通话卡
+
+Android AirSIM「设置 → 默认通话卡」支持选择已启用的 SIM/eSIM，或保持「跟随系统默认」。本地保存的选项用于 BLE、VoWLAN、Relay 和 Android 本机拨号，不改变系统默认通话卡及短信卡，无需 Relay 注册或网络连接。
+
+读取可选卡需要现有的电话状态权限，号码展示权限为可选。每次拨号使用系统提供的 `PhoneAccountHandle` 并重新检查其是否仍启用；指定卡不可用时返回明确错误，不静默切换其他卡。系统紧急呼叫路由不受此选项保证。
 
 ## 运行要求
 
@@ -58,6 +64,8 @@ Release APK 输出到 `android/phone-control-app/build/android/AirSIM-Phone-Brid
 
 ## 三星手机配置
 
+首次权限请求结束后，App 自动检查 Shizuku：未安装的弹窗包含官方地址 `https://shizuku.rikka.app/zh-hans/download/` 和下载入口；已安装未启动提示打开管理器，未授权提示授权。就绪时不弹窗；本次启动最多一次，可点「稍后」继续。启动引导与权限、AVF 环境及闪退报告提示按顺序呈现，不会自动安装 Shizuku 或绕过用户授权。
+
 1. 安装 APK 并启动 AirSIM。
 2. 如果启动提示显示 AVF Linux 尚未运行，点“启动 Linux Terminal”；若 Terminal 未启用，点“打开开发者选项”并启用 Linux 开发环境。
 3. Linux 首次启动后，复制并在 Terminal 中执行 v0.4.6 首次安装命令；已有 `0.4.4-1` 的设备请先按[一次性密钥迁移](../../docs/AVF_INSTALL_GUIDE.md)升级到 v0.4.5，再通过安装器升级，不能通过旧 installer 直接跳过密钥迁移：
@@ -78,6 +86,10 @@ Release APK 输出到 `android/phone-control-app/build/android/AirSIM-Phone-Brid
 Terminal 若报 `udev` 需要较新 `libudev1`、`unmet dependencies`，属于 AVF Debian 包状态问题。先在 Terminal 运行 `apt-cache policy udev libudev1` 和 `sudo apt-get -s -f install`，检查模拟计划；不要直接让 App 或脚本自动执行 `apt --fix-broken install`。
 
 ## 厂商系统兼容性边界
+
+本版修复增加 URL UTF-8 编解码、Shizuku 命令输出与 PCM 失败清理的旧 API 替代；短信工厂按 API 31 分支，保留默认短信 SIM。旧 AVF 模式在 Android 10–13 改为可点击通知提示用户恢复 Terminal，只有 API 34+ 才调用新的后台启动选项。Shizuku daemon 版本提升至 8，覆盖升级后不复用旧静音实现；使用 shell 包身份的 `AudioManager` 操作并回读静音结果，挂断恢复之前的静音/音量，失败保留恢复快照供重试，不虚报静音成功。OEM 不支持时仍须用户处理。
+
+Android 11/12 真机曾在启动时因 `ByteArrayOutputStream.toString(Charset)` 和 `Collection.toArray(IntFunction)` 缺失而闪退。共享实现改用兼容的 UTF-8/ASCII 解码与数组转换；VoWLAN、Relay、PCM 和闪退报告路径同步替换 `InputStream.readNBytes`。`test.sh` 与 APK 构建都会检查编译后的方法引用，阻止这些已知不兼容调用回归；这是定向回归检查，不是完整 Android API lint，仍需目标系统真机验收。
 
 AirSIM 会识别小米、Redmi、OPPO、OnePlus、realme、vivo、iQOO 和荣耀等厂商，并区分“Terminal 已安装但停用”“Terminal 未安装”和“系统未公开 AVF”三种情况。App 可以启动已安装的 AOSP Linux Terminal，或跳转到开发者选项，但普通第三方 App 无法强制补装厂商固件删除的 Terminal、打开未公开的 AVF 系统功能，或绕过系统签名权限。遇到后两种情况需要厂商系统更新、包含 Terminal 的系统镜像，或由 OEM 将 AirSIM 作为特权系统组件集成。
 

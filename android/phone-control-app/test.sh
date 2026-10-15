@@ -9,6 +9,7 @@ if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/javac" ]; then
   fi
 fi
 JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}
+export JAVA_HOME
 JAVAC="$JAVA_HOME/bin/javac"
 JAVA="$JAVA_HOME/bin/java"
 
@@ -95,6 +96,18 @@ assert_contains "$ROOT/src/com/airsim/phonecontrol/StandaloneAgentStore.java" \
 rm -rf "$OUT"
 mkdir -p "$OUT"
 "$JAVAC" --release 17 -d "$OUT" \
+  "$ROOT"/test/android/Manifest.java \
+  "$ROOT"/test/android/provider/Settings.java \
+  "$ROOT"/test/android/content/SharedPreferences.java \
+  "$ROOT"/test/android/content/ComponentName.java \
+  "$ROOT"/test/android/content/pm/PackageManager.java \
+  "$ROOT"/test/android/os/Bundle.java \
+  "$ROOT"/test/android/os/Build.java \
+  "$ROOT"/test/android/telecom/PhoneAccount.java \
+  "$ROOT"/test/android/telecom/PhoneAccountHandle.java \
+  "$ROOT"/test/android/telephony/TelephonyManager.java \
+  "$ROOT"/test/android/telephony/SubscriptionManager.java \
+  "$ROOT"/test/android/telephony/SubscriptionInfo.java \
   "$ROOT"/test/android/content/Context.java \
   "$ROOT"/test/android/net/Uri.java \
   "$ROOT"/test/android/os/Looper.java \
@@ -117,14 +130,19 @@ mkdir -p "$OUT"
   "$ROOT"/src/com/airsim/phonecontrol/TelecomStateMapper.java \
 	"$ROOT"/src/com/airsim/phonecontrol/TelecomRolePolicy.java \
 	"$ROOT"/src/com/airsim/phonecontrol/DialerRoleSetupPolicy.java \
+	"$ROOT"/src/com/airsim/phonecontrol/ShizukuStartupPolicy.java \
 	"$ROOT"/src/com/airsim/phonecontrol/TelecomInvocation.java \
 	"$ROOT"/src/com/airsim/phonecontrol/PrivilegedBridgeProtocol.java \
 	"$ROOT"/src/com/airsim/phonecontrol/PrivilegedBridgeCoordinator.java \
 	"$ROOT"/src/com/airsim/phonecontrol/PhoneAudioBridgeProcessPolicy.java \
   "$ROOT"/src/com/airsim/phonecontrol/WireJson.java \
   "$ROOT"/src/com/airsim/phonecontrol/DebugRedactor.java \
+  "$ROOT"/src/com/airsim/phonecontrol/CrashReportFormatter.java \
+  "$ROOT"/src/com/airsim/phonecontrol/CrashReportStore.java \
+  "$ROOT"/src/com/airsim/phonecontrol/CrashReportSharePayload.java \
   "$ROOT"/src/com/airsim/phonecontrol/AgentCommand.java \
   "$ROOT"/src/com/airsim/phonecontrol/CallRepository.java \
+  "$ROOT"/src/com/airsim/phonecontrol/DefaultCallAccount.java \
   "$ROOT"/src/com/airsim/phonecontrol/CloudCallTarget.java \
   "$ROOT"/src/com/airsim/phonecontrol/AgentCommandDispatcher.java \
   "$ROOT"/src/com/airsim/phonecontrol/SMSPayloadPolicy.java \
@@ -153,9 +171,74 @@ mkdir -p "$OUT"
 	"$ROOT"/src/com/airsim/phonecontrol/PCMBridgeStatus.java \
 	"$ROOT"/src/com/airsim/phonecontrol/MuteRequestRetrier.java \
 	"$ROOT"/src/com/airsim/phonecontrol/NotificationUpdateGate.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEProtocol.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEAudioQueue.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEPairingManager.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLECredentialStore.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEReplayWindow.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEControlChannel.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLECallController.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEPCMBackendResolver.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEDiagnostics.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEPCMBridgeSession.java \
+	"$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEMediaSession.java \
 	"$ROOT"/test/com/airsim/phonecontrol/CoreTests.java \
   "$ROOT"/test/com/airsim/phonecontrol/NotificationUpdateGateTests.java \
-  "$ROOT"/test/com/airsim/phonecontrol/CallRepositoryTests.java
+  "$ROOT"/test/com/airsim/phonecontrol/CallRepositoryTests.java \
+  "$ROOT"/test/com/airsim/phonecontrol/DefaultCallAccountTests.java \
+  "$ROOT"/test/com/airsim/phonecontrol/ShizukuStartupPolicyTests.java
+"$JAVAC" --release 17 -cp "$OUT" -d "$OUT" \
+  "$ROOT"/src/com/airsim/phonecontrol/AndroidAgentIdentity.java \
+  "$ROOT"/test/com/airsim/phonecontrol/AndroidAgentIdentityTests.java
+sh "$ROOT/verify-io-api.sh" "$OUT"
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.CoreTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.NotificationUpdateGateTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.CallRepositoryTests
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.DefaultCallAccountTests
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.AndroidAgentIdentityTests
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.ShizukuStartupPolicyTests
+
+# Keep the real diagnostics class ahead of the unrelated suite's BridgeLog test double.
+DIAGNOSTICS_OUT="$OUT/diagnostics"
+mkdir -p "$DIAGNOSTICS_OUT"
+"$JAVAC" --release 17 -cp "$OUT" -d "$DIAGNOSTICS_OUT" \
+  "$ROOT"/test/android/util/Log.java \
+  "$ROOT"/src/com/airsim/phonecontrol/BridgeLog.java \
+  "$ROOT"/test/com/airsim/phonecontrol/DiagnosticFileTests.java
+sh "$ROOT/verify-io-api.sh" "$DIAGNOSTICS_OUT"
+"$JAVA" -cp "$DIAGNOSTICS_OUT:$OUT" com.airsim.phonecontrol.DiagnosticFileTests
+
+"$JAVAC" --release 17 -cp "$OUT" -d "$OUT" \
+  "$ROOT"/src/com/airsim/phonecontrol/LocalOutputMuteController.java \
+  "$ROOT"/test/com/airsim/phonecontrol/LocalOutputMuteControllerTests.java
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.LocalOutputMuteControllerTests
+
+# Compile the actual executor against Android; replace only the telephony boundary at runtime.
+if [ -z "${ANDROID_SDK_ROOT:-}" ]; then
+  if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}" ]; then
+    ANDROID_SDK_ROOT="$ANDROID_HOME"
+  elif [ -d "$HOME/Library/Android/sdk" ]; then
+    ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+  elif [ -d "/opt/homebrew/share/android-commandlinetools" ]; then
+    ANDROID_SDK_ROOT="/opt/homebrew/share/android-commandlinetools"
+  fi
+fi
+ANDROID_JAR="${ANDROID_SDK_ROOT:-/opt/homebrew/share/android-commandlinetools}/platforms/android-35/android.jar"
+SMS_OUT="$OUT/sms-compat"
+mkdir -p "$SMS_OUT"
+"$JAVAC" --release 17 -cp "$ANDROID_JAR:$DIAGNOSTICS_OUT:$OUT" -d "$SMS_OUT" \
+  "$ROOT"/src/com/airsim/phonecontrol/SMSCommandExecutor.java
+"$JAVAC" --release 17 -cp "$SMS_OUT:$OUT:$ANDROID_JAR" -d "$SMS_OUT" \
+  "$ROOT"/test/compat/android/telephony/SmsManager.java \
+  "$ROOT"/test/com/airsim/phonecontrol/SMSCompatibilityTests.java
+"$JAVA" -cp "$SMS_OUT:$OUT:$ANDROID_JAR" com.airsim.phonecontrol.SMSCompatibilityTests
+
+"$JAVAC" --release 17 -cp "$OUT" -d "$OUT" \
+  "$ROOT"/src/com/airsim/phonecontrol/CloudPCMAudioQueue.java \
+  "$ROOT"/test/com/airsim/phonecontrol/CloudPCMAudioQueueTests.java
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.CloudPCMAudioQueueTests
+
+"$JAVAC" --release 17 -cp "$DIAGNOSTICS_OUT:$OUT" -d "$OUT" \
+  "$ROOT"/src/com/airsim/phonecontrol/CloudPCMMediaPump.java \
+  "$ROOT"/test/com/airsim/phonecontrol/CloudPCMMediaPumpTests.java
+"$JAVA" -cp "$DIAGNOSTICS_OUT:$OUT" com.airsim.phonecontrol.CloudPCMMediaPumpTests

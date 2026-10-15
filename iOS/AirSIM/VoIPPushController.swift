@@ -112,6 +112,25 @@ struct IncomingVoIPCall: Equatable, Sendable {
         requestedMediaTransport = mediaTransport
     }
 
+    init(
+        bluetoothCallID: String,
+        uuid: UUID,
+        generation: UInt64,
+        number: String?
+    ) {
+        callID = bluetoothCallID
+        self.uuid = uuid
+        self.generation = max(1, generation)
+        self.number = number
+        callerName = nil
+        expiresAt = Date().addingTimeInterval(5 * 60 * 60)
+        isVirtual = false
+        isOutgoing = false
+        ttsText = nil
+        authenticatedMediaURL = nil
+        requestedMediaTransport = .legacyPCM
+    }
+
     func matches(backendID: String?, uuid: UUID?) -> Bool {
         backendID == callID || uuid == self.uuid
     }
@@ -159,6 +178,7 @@ struct IncomingVoIPCall: Equatable, Sendable {
 
 enum CallTransport: Equatable, Sendable {
     case vowlan
+    case bluetooth
     case moduleLocal
     case cloud
 }
@@ -178,6 +198,11 @@ enum CloudModePreference {
     static let key = "airsim.cloud-audio-relay-enabled"
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: ConnectionModePreference.key) != nil {
+            return ConnectionModeRuntimePolicy(
+                mode: ConnectionModePreference.selected(defaults: defaults)
+            ).startsCloud
+        }
         guard !LocalModePreference.isEnabled(defaults: defaults) else { return false }
         guard defaults.object(forKey: key) != nil else { return true }
         return defaults.bool(forKey: key)
@@ -188,7 +213,10 @@ enum LocalModePreference {
     static let key = "airsim.local-only-mode-enabled"
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: key)
+        if defaults.object(forKey: ConnectionModePreference.key) != nil {
+            return ConnectionModePreference.selected(defaults: defaults) == .vowlan
+        }
+        return defaults.bool(forKey: key)
     }
 }
 
@@ -237,32 +265,51 @@ enum RelayHealthValidation {
     }
 }
 
-enum AirSIMConnectionMode: Equatable, Sendable {
+enum ConnectionPresentationMode: Equatable, Sendable {
     case vowlan
+    case bluetooth
     case cloud
     case offline
 }
 
 struct ConnectionModePresentation: Equatable, Sendable {
-    let mode: AirSIMConnectionMode
+    let mode: ConnectionPresentationMode
     let title: String
     let status: String
     let detail: String
 
     static func make(
+        selectedMode: AirSIMConnectionMode = .automatic,
         vowlanOnline: Bool,
+        bluetoothReady: Bool = false,
         cloudModeEnabled: Bool,
         cloudOnline: Bool
     ) -> ConnectionModePresentation {
-        if vowlanOnline {
+        let selected = DialRouteSelector.preferred(
+            mode: selectedMode,
+            vowlanReady: vowlanOnline,
+            bluetoothReady: bluetoothReady,
+            cloudReady: cloudModeEnabled && cloudOnline
+        )
+        if selected == .vowlan {
             return ConnectionModePresentation(
                 mode: .vowlan,
                 title: "VoWLAN",
                 status: "已连接",
-                detail: cloudOnline ? "局域网优先，云端可回退" : "同一 Wi-Fi / 三星热点"
+                detail: bluetoothReady || cloudOnline
+                    ? "自动模式优先使用同一 Wi-Fi / 三星热点"
+                    : "同一 Wi-Fi / 三星热点"
             )
         }
-        if cloudModeEnabled {
+        if selected == .bluetooth {
+            return ConnectionModePresentation(
+                mode: .bluetooth,
+                title: "VoBLE",
+                status: "已连接",
+                detail: "蓝牙控制与通话音频已认证，不经过 Relay"
+            )
+        }
+        if selected == .cloud {
             return ConnectionModePresentation(
                 mode: .cloud,
                 title: "云端",
@@ -270,12 +317,20 @@ struct ConnectionModePresentation: Equatable, Sendable {
                 detail: cloudOnline ? "独立 Relay 与 Agent 心跳正常" : "运行云端模式自检定位故障"
             )
         }
-        return ConnectionModePresentation(
-            mode: .offline,
-            title: "未连接",
-            status: "离线",
-            detail: "VoWLAN 不可达且云端模式已关闭"
-        )
+        switch selectedMode {
+        case .vowlan:
+            return .init(mode: .vowlan, title: "VoWLAN", status: "不可达",
+                         detail: "尚未发现已配对且通过鉴权的 VoWLAN Agent")
+        case .bluetooth:
+            return .init(mode: .bluetooth, title: "VoBLE", status: "不可达",
+                         detail: "蓝牙 Agent 尚未完成连接与应用层认证")
+        case .cloud:
+            return .init(mode: .cloud, title: "云端", status: "不可达",
+                         detail: "运行云端模式自检定位故障")
+        case .automatic:
+            return .init(mode: .offline, title: "自动", status: "无可用路由",
+                         detail: "正在按 VoWLAN、VoBLE、云端顺序查找拨号路由")
+        }
     }
 }
 
@@ -615,6 +670,7 @@ struct AgentPushRegistration: Encodable, Equatable, Sendable {
 }
 
 struct AgentPushStatus: Decodable, Sendable {
+    let localMode: Bool?
     let cloudModeEnabled: Bool?
     let configured: Bool
     let callPushReady: Bool
@@ -623,7 +679,16 @@ struct AgentPushStatus: Decodable, Sendable {
     let relayURL: String?
     let lastError: String?
 
+    var preservesLocalPairing: Bool {
+        if let localMode { return localMode }
+        // Older AVF Agents omit local_mode but only report configured without
+        // cloud credentials for a local pairing. Never infer from HTTP 200 alone.
+        return configured && cloudModeEnabled == false && !callPushReady && !messagePushReady
+            && (relayURL ?? "").isEmpty
+    }
+
     enum CodingKeys: String, CodingKey {
+        case localMode = "local_mode"
         case cloudModeEnabled = "cloud_enabled"
         case configured
         case callPushReady = "call_push_ready"
@@ -737,6 +802,7 @@ final class VoIPPushController: NSObject {
     private var lastRegisteredRoute: LocalAgentRoute?
     private var lastRelayRegisteredFingerprint: String?
     private var registrationInFlight = false
+    private let pairingGate = SamsungPairingRegistrationGate()
     private var registrationPending = false
     private var nextRegistrationAttempt = Date.distantPast
     private var nextRelayRegistrationAttempt = Date.distantPast
@@ -982,9 +1048,15 @@ final class VoIPPushController: NSObject {
             "环境=\(registration.environment)，Relay=\(registration.relayURL.isEmpty ? "未配置" : "已配置")"
         )
 #endif
-        if !agentRegistered {
+        if !agentRegistered, pairingGate.beginAgentWrite() {
+            defer { pairingGate.endAgentWrite() }
             do {
                 guard case .vowlan = api.route else { throw CallKitBridgeError.noReachableTransport }
+                if try await api.pushStatus().preservesLocalPairing {
+                    // Preserve only this Agent's local choice; global Relay token
+                    // refresh for other paired devices remains independent below.
+                    agentRegistered = true
+                } else {
                 try await api.registerVoIPPush(registration)
                 lastRegisteredFingerprint = fingerprint
                 lastRegisteredRoute = api.route
@@ -1005,6 +1077,7 @@ final class VoIPPushController: NSObject {
                     }
                 }
 #endif
+                }
             } catch {
 #if DEBUG
                 print("[AirSIM PushKit] 向模块注册 token 失败：\(error.localizedDescription)")
@@ -1448,18 +1521,28 @@ final class VoIPPushController: NSObject {
         )
     }
 
-    func pairingRegistration() -> AgentPushRegistration? {
-        if LocalModePreference.isEnabled() {
-            guard let secret = try? VoWLANCredentialStore.loadOrCreate().encodedSecret else { return nil }
-            return .local(vowlanSecret: secret)
+    func performAndroidPairing<T>(
+        localOnly: Bool,
+        operation: (AgentPushRegistration) async throws -> T
+    ) async throws -> T {
+        try await pairingGate.withPairing {
+            guard let registration = self.pairingRegistration(localOnly: localOnly) else {
+                throw SamsungPairingClientError.registrationUnavailable
+            }
+            return try await operation(registration)
         }
-        guard var registration = currentRegistration() else { return nil }
-        registration.vowlanSecret = (try? VoWLANCredentialStore.loadOrCreate().encodedSecret)
-        return registration
     }
 
-    private func currentRegistration() -> AgentPushRegistration? {
-        guard !LocalModePreference.isEnabled() else { return nil }
+    func pairingRegistration(localOnly: Bool = LocalModePreference.isEnabled()) -> AgentPushRegistration? {
+        guard let secret = try? VoWLANCredentialStore.loadOrCreate().encodedSecret else { return nil }
+        return try? SamsungPairingRegistrationPolicy.registration(
+            localOnly: localOnly, vowlanSecret: secret,
+            cloudRegistration: { self.currentRegistration(allowLocalMode: true) }
+        )
+    }
+
+    private func currentRegistration(allowLocalMode: Bool = false) -> AgentPushRegistration? {
+        guard allowLocalMode || !LocalModePreference.isEnabled() else { return nil }
         guard let token = UserDefaults.standard.string(forKey: Keys.token), !token.isEmpty else {
 #if DEBUG
             print("[AirSIM PushKit] 暂无 VoIP token，跳过同步")

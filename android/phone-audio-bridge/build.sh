@@ -2,8 +2,22 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/javac" ]; then
+  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+    JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || true)
+  fi
+fi
 JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}
-ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/opt/homebrew/share/android-commandlinetools}
+
+if [ -z "${ANDROID_SDK_ROOT:-}" ] || [ ! -d "${ANDROID_SDK_ROOT}" ]; then
+  if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}" ]; then
+    ANDROID_SDK_ROOT="$ANDROID_HOME"
+  elif [ -d "$HOME/Library/Android/sdk" ]; then
+    ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+  else
+    ANDROID_SDK_ROOT="/opt/homebrew/share/android-commandlinetools"
+  fi
+fi
 ANDROID_JAR=${ANDROID_JAR:-$ANDROID_SDK_ROOT/platforms/android-35/android.jar}
 D8=${D8:-$ANDROID_SDK_ROOT/build-tools/35.0.0/d8}
 JAVAC=$JAVA_HOME/bin/javac

@@ -4,9 +4,24 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 MANIFEST_SOURCE=${AIRSIM_ANDROID_MANIFEST:-"$ROOT/AndroidManifest.xml"}
 OUTPUT_BASENAME=${AIRSIM_ANDROID_OUTPUT_BASENAME:-AirSIM-Phone-Bridge}
-SDK=${ANDROID_SDK_ROOT:-/opt/homebrew/share/android-commandlinetools}
+
+if [ -z "${ANDROID_SDK_ROOT:-}" ] || [ ! -d "${ANDROID_SDK_ROOT}" ]; then
+  if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}" ]; then
+    ANDROID_SDK_ROOT="$ANDROID_HOME"
+  elif [ -d "$HOME/Library/Android/sdk" ]; then
+    ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+  else
+    ANDROID_SDK_ROOT="/opt/homebrew/share/android-commandlinetools"
+  fi
+fi
+SDK=${ANDROID_SDK_ROOT}
 BUILD_TOOLS="$SDK/build-tools/35.0.0"
 ANDROID_JAR="$SDK/platforms/android-35/android.jar"
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/javac" ]; then
+  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+    JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || true)
+  fi
+fi
 JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}
 export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
@@ -62,6 +77,8 @@ SOURCES=()
 while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/src" -name '*.java' -print0)
 while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/../phone-audio-bridge/src" -name '*.java' -print0)
 "$JAVA_HOME/bin/javac" -source 17 -target 17 -Xlint:all -classpath "$CLASSPATH" -d "$CLASSES" "${SOURCES[@]}"
+
+sh "$ROOT/verify-io-api.sh" "$CLASSES"
 
 CLASSES_ARGS=()
 while IFS= read -r -d '' class_file; do CLASSES_ARGS+=("$class_file"); done < <(find "$CLASSES" -name '*.class' -print0)

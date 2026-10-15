@@ -115,10 +115,10 @@ public final class StandaloneAgentService extends Service {
                 .put("event", "agent_heartbeat").put("agent_version", "standalone-0.1.0")
                 .put("agent_id", registration.optString("android_agent_id", AndroidAgentIdentity.agentID(this)))
                 .put("agent_kind", "standalone")
-                .put("device_name", registration.optString("android_device_name", AndroidAgentIdentity.deviceName()))
+                .put("device_name", AndroidAgentIdentity.deviceName())
                 .put("manufacturer", registration.optString("android_manufacturer", android.os.Build.MANUFACTURER))
                 .put("model", registration.optString("android_model", android.os.Build.MODEL))
-                .put("phone_number", registration.optString("android_phone_number", AndroidAgentIdentity.phoneNumber(this)))
+                .put("phone_number", AndroidAgentIdentity.phoneNumber(this))
                 .put("at_ok", true).put("cellular_state", "registered")
                 .put("cellular_registration", "Android Telecom")
                 .put("cellular_recovery", "not_required").put("ecm_carrier", "android-default");
@@ -172,7 +172,7 @@ public final class StandaloneAgentService extends Service {
                     continue;
                 }
                 URI relayURI = URI.create(registration.getString("relay_url"));
-                String deviceID = URLEncoder.encode(registration.getString("device_id"), StandardCharsets.UTF_8)
+                String deviceID = URLEncoder.encode(registration.getString("device_id"), "UTF-8")
                         .replace("+", "%20");
                 URI endpoint = URI.create("wss://" + relayURI.getRawAuthority()
                         + "/v1/devices/" + deviceID + "/commands/connect");
