@@ -32,12 +32,9 @@ public final class AirSIMInCallService extends InCallService {
         BridgeLog.info("telecom_call_added call_id=" + DebugRedactor.safeIdentifier(callId)
                 + " direction=" + direction(call) + " state=" + TelecomStateMapper.toWireState(call.getState()));
         Call.Callback callback = new Call.Callback() {
-            @Override public void onStateChanged(Call changed, int state) {
-                if (state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) {
-                    try { changed.disconnect(); } catch (Exception ignored) {}
-                }
-                emit(changed, state);
-            }
+            // 上游 v0.9.7.2：不再强制 disconnect()。静音由“通话归属权”生命周期精确控制，
+            // 挂断音量策略由 SystemCallOutputPolicy/CallOutputPolicyMute 承接。
+            @Override public void onStateChanged(Call changed, int state) { emit(changed, state); }
             @Override public void onDetailsChanged(Call changed, Call.Details details) { emit(changed, changed.getState()); }
         };
         callbacks.put(call, callback);

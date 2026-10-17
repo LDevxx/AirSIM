@@ -110,18 +110,30 @@ public final class VoWLANControlGateway implements Closeable {
                 String local = peer.getLocalAddress().getHostAddress();
                 DirectCallOwnership.Lease callLease = DirectCallOwnership.capture(local);
                 java.util.Set<String> before = CallRepository.callIDs();
+                boolean isDialPath = "/api/calls/dial".equals(request.path)
+                        || "/api/v2/calls/dial".equals(request.path);
+                boolean isAnswerPath = "/api/calls/answer".equals(request.path)
+                        || "/api/v2/ring_group/answer".equals(request.path);
+                boolean isEndPath = "/api/calls/hangup".equals(request.path)
+                        || "/api/calls/reject".equals(request.path)
+                        || "/api/v2/calls/hangup".equals(request.path)
+                        || "/api/v2/calls/reject".equals(request.path);
                 String answerTarget = "";
-                if ("/api/calls/answer".equals(request.path)) {
-                    String requested = request.body.length == 0 ? "" : new org.json.JSONObject(
-                            new String(request.body, StandardCharsets.UTF_8)).optString("call_id");
+                if (isAnswerPath) {
+                    org.json.JSONObject answerBody = request.body.length == 0 ? new org.json.JSONObject()
+                            : new org.json.JSONObject(new String(request.body, StandardCharsets.UTF_8));
+                    String requested = answerBody.optString("call_id",
+                            answerBody.optString("call_uuid", answerBody.optString("callUUID", "")));
                     AgentClient.ForwardResponse status = new AgentClient(context).forwardVoWLAN("GET", "/api/calls/status", null);
                     org.json.JSONObject active = new org.json.JSONObject(status.payload()).optJSONObject("active");
-                    if (active != null && (requested.isEmpty() || requested.equals(active.optString("id")))) {
+                    if (active != null && (requested.isEmpty()
+                            || requested.equals(active.optString("id"))
+                            || requested.equals(active.optString("android_id")))) {
                         String exactID = active.optString("android_id", active.optString("id"));
                         if (CallRepository.state(exactID) == android.telecom.Call.STATE_RINGING) answerTarget = exactID;
                     }
                 }
-                String dialNumber = "/api/calls/dial".equals(request.path)
+                String dialNumber = isDialPath
                         ? new org.json.JSONObject(new String(request.body, StandardCharsets.UTF_8)).optString("number") : "";
                 String body = request.body.length == 0 ? null : new String(request.body, StandardCharsets.UTF_8);
                 AgentClient.ForwardResponse forwarded =
@@ -132,7 +144,7 @@ public final class VoWLANControlGateway implements Closeable {
                 ownsCall = VoWLANControlPolicy.ownsCallAfterResponse(
                         request.path, responseStatus, ownsCall);
                 if (responseStatus >= 200 && responseStatus < 300) {
-                    if ("/api/calls/dial".equals(request.path)) {
+                    if (isDialPath) {
                         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
                         String created;
                         do {
@@ -142,11 +154,19 @@ public final class VoWLANControlGateway implements Closeable {
                         } while (System.nanoTime() < deadline);
                         DirectCallOwnership.record(local, created, callLease);
                         AirSIMInCallService.refreshAudioPolicy();
-                    } else if ("/api/calls/answer".equals(request.path)
-                            && CallRepository.state(answerTarget) == android.telecom.Call.STATE_ACTIVE) {
-                        DirectCallOwnership.record(local, answerTarget, callLease);
-                        AirSIMInCallService.refreshAudioPolicy();
-                    } else if ("/api/calls/hangup".equals(request.path) || "/api/calls/reject".equals(request.path)) {
+                    } else if (isAnswerPath && !answerTarget.isEmpty()) {
+                        // 等待 Telecom 把振铃呼叫切换为 ACTIVE 后再绑定通话归属权，
+                        // 保证本地扬声器静音策略在他处接听后立即生效。
+                        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+                        while (System.nanoTime() < deadline
+                                && CallRepository.state(answerTarget) != android.telecom.Call.STATE_ACTIVE) {
+                            Thread.sleep(50);
+                        }
+                        if (CallRepository.state(answerTarget) == android.telecom.Call.STATE_ACTIVE) {
+                            DirectCallOwnership.record(local, answerTarget, callLease);
+                            AirSIMInCallService.refreshAudioPolicy();
+                        }
+                    } else if (isEndPath) {
                         DirectCallOwnership.end(callLease, false);
                         AirSIMInCallService.refreshAudioPolicy();
                     }

@@ -182,7 +182,29 @@ final class StandaloneAgentGateway {
                 int slotIndex = input.optInt("slot_index", input.optInt("slot_id", -1));
                 String slotStr = slotIndex >= 0 ? "slot" + slotIndex : input.optString("slot", "");
                 int subId = input.optInt("sub_id", -1);
-                yield command("dial", "", input.optString("number", ""), "", slotIndex, subId, slotStr);
+                String dialNumber = input.optString("number", "");
+                String clientCallUUID = input.optString("call_uuid", input.optString("callUUID", ""));
+                java.util.Set<String> beforeIDs = CallRepository.callIDs();
+                AgentCommandDispatcher.Result result = execute(new AgentCommand(
+                        UUID.randomUUID().toString(), "dial", "", dialNumber, "", slotIndex, subId, slotStr));
+                if (!result.success()) yield error(502, result.error());
+                // 等待 Telecom 层创建外呼 Call，把权威通话 ID 回传给 macOS 客户端，
+                // 确保后续挂断/静音命令能命中同一通话（修复挂断不生效问题）。
+                String createdID = CallRepository.newOutgoingCallSince(beforeIDs, dialNumber);
+                long dialDeadline = System.nanoTime()
+                        + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+                while (createdID.isEmpty() && System.nanoTime() < dialDeadline) {
+                    Thread.sleep(50);
+                    createdID = CallRepository.newOutgoingCallSince(beforeIDs, dialNumber);
+                }
+                if (!createdID.isEmpty()) rememberClientCallID(clientCallUUID, createdID);
+                yield ok(new JSONObject()
+                        .put("dialing", true)
+                        .put("number", dialNumber)
+                        .put("android_confirmed", true)
+                        .put("call_uuid", createdID)
+                        .put("call_id", createdID)
+                        .toString());
             }
             case "/api/v2/ring_group/answer" -> {
                 String callUuid = input.optString("callUUID", input.optString("call_uuid", ""));
@@ -332,9 +354,32 @@ final class StandaloneAgentGateway {
         synchronized (callsLock) {
             String targetId = input.optString("call_id",
                     input.optString("call_uuid", input.optString("callUUID", "")));
+            // 客户端在拨号时自造的 call_uuid 先映射回权威的 android 通话 ID
+            targetId = resolveClientCallID(targetId);
             return CallRepository.idForPublishedAction(action, targetId,
                     activeCall == null ? "" : activeCall.optString("id"),
                     activeCall == null ? "" : activeCall.optString("android_id"));
+        }
+    }
+
+    /** 客户端自造 call_uuid → 权威 android 通话 ID 的有界映射表。 */
+    private static final int MAX_CLIENT_CALL_IDS = 32;
+    private final java.util.Map<String, String> clientCallIDs = new java.util.LinkedHashMap<>();
+
+    private void rememberClientCallID(String clientID, String androidID) {
+        if (clientID == null || clientID.isEmpty() || androidID == null || androidID.isEmpty()) return;
+        synchronized (clientCallIDs) {
+            clientCallIDs.put(clientID, androidID);
+            while (clientCallIDs.size() > MAX_CLIENT_CALL_IDS) {
+                clientCallIDs.remove(clientCallIDs.keySet().iterator().next());
+            }
+        }
+    }
+
+    private String resolveClientCallID(String requestedID) {
+        if (requestedID == null || requestedID.isEmpty()) return "";
+        synchronized (clientCallIDs) {
+            return clientCallIDs.getOrDefault(requestedID, requestedID);
         }
     }
 
@@ -380,16 +425,13 @@ final class StandaloneAgentGateway {
         String number = "未知号码";
         int slotId = 0;
         String state = event.optString("state", "");
-        String prevState = "";
         boolean isEnded = "ended".equals(state);
         boolean isRinging = "incoming".equals(state) || "alerting".equals(state) || "ringing".equals(state);
-        boolean wasRinging = false;
 
         synchronized (callsLock) {
             if (isEnded) {
                 if (activeCall != null) {
                     callUuid = activeCall.optString("id", activeCall.optString("android_id", ""));
-                    prevState = activeCall.optString("state", "");
                     activeCall.put("state", "ended").put("ended_at", Instant.now().toString())
                             .put("updated_at", Instant.now().toString());
                     callHistory.put(activeCall);
@@ -397,11 +439,9 @@ final class StandaloneAgentGateway {
                 }
             } else {
                 if (activeCall == null || !event.optString("call_id").equals(activeCall.optString("android_id"))) {
-                    activeCall = new JSONObject().put("id", "android-" + System.currentTimeMillis())
+                    activeCall = new JSONObject().put("id", event.optString("call_id"))
                             .put("android_id", event.optString("call_id")).put("index", 1)
                             .put("started_at", Instant.now().toString()).put("missed", false);
-                } else {
-                    prevState = activeCall.optString("state", "");
                 }
                 activeCall.put("direction", event.optString("direction"))
                         .put("state", state).put("number", event.optString("number"))
@@ -414,7 +454,6 @@ final class StandaloneAgentGateway {
                 callUuid = activeCall.optString("id", activeCall.optString("android_id", ""));
                 number = activeCall.optString("number", "未知号码");
                 slotId = activeCall.optInt("slot_id", 0);
-                wasRinging = "incoming".equals(prevState) || "alerting".equals(prevState) || "ringing".equals(prevState);
             }
         }
 
@@ -431,12 +470,16 @@ final class StandaloneAgentGateway {
                     .put("caller_number", number)
                     .put("slot_index", slotId);
             publishClusterEvent(broadcast);
-        } else if ("active".equals(state) && wasRinging && !callUuid.isEmpty()) {
-            JSONObject dismiss = new JSONObject()
-                    .put("type", "ring_group_dismiss")
+        } else if (!callUuid.isEmpty()) {
+            // 通话状态演进（dialing/active/held 等）向集群广播：macOS 依据该事件
+            // 把外呼切换为"通话中"，或在他处接听时自动收起振铃横幅。
+            JSONObject stateEvent = new JSONObject()
+                    .put("type", "call_state")
                     .put("call_uuid", callUuid)
-                    .put("reason", "answered_elsewhere");
-            publishClusterEvent(dismiss);
+                    .put("state", state)
+                    .put("direction", event.optString("direction"))
+                    .put("number", number);
+            publishClusterEvent(stateEvent);
         }
 
         callEvents.advance();

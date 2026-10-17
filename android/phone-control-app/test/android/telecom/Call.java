@@ -9,11 +9,6 @@ public class Call {
     public static final int STATE_DISCONNECTING = 9;
     public static final int STATE_DISCONNECTED = 10;
 
-    public static class Details {
-        public PhoneAccountHandle getAccountHandle() { return null; }
-        public Bundle getExtras() { return null; }
-    }
-
     private int state;
     private Details details;
     private final java.util.List<Callback> callbacks = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -27,6 +22,7 @@ public class Call {
         state = value;
         for (Callback callback : callbacks) callback.onStateChanged(this, value);
     }
+    // 上游 v0.9.7.2 Details（方向/号码句柄）+ LD-MOD 保留的账户与扩展读取。
     public static final class Details {
         public static final int DIRECTION_INCOMING = 0;
         public static final int DIRECTION_OUTGOING = 1;
@@ -35,6 +31,8 @@ public class Call {
         Details(int direction, String number) { this.direction = direction; handle = android.net.Uri.parse("tel:" + number); }
         public int getCallDirection() { return direction; }
         public android.net.Uri getHandle() { return handle; }
+        public PhoneAccountHandle getAccountHandle() { return null; }
+        public Bundle getExtras() { return null; }
     }
     public Call(int state, int direction, String number) { this.state = state; details = new Details(direction, number); }
     public Details getDetails() { return details; }
