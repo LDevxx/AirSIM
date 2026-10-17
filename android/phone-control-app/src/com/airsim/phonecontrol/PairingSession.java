@@ -6,7 +6,9 @@ import java.util.Locale;
 import java.util.UUID;
 
 public final class PairingSession {
-    public static final long LIFETIME_MILLIS = 120_000L;
+    // 配对窗口有效期：120s → 300s。远程配对（Tailscale 子网路由）场景下，
+    // 人工跨设备抄端口 + 输验证码耗时较长，5 分钟窗口避免频繁过期重开。
+    public static final long LIFETIME_MILLIS = 300_000L;
 
     private final String id;
     private final String code;
