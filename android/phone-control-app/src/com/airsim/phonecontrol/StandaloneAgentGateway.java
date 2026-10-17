@@ -154,8 +154,8 @@ final class StandaloneAgentGateway {
                 case "/api/sms/status" -> ok(new JSONObject().put("auto_cleanup_me", true)
                         .put("count", smsStore.pendingCount()).put("last_poll_error", "").toString());
                 case "/api/calls/audio/host/config" -> ok(new JSONObject()
-                        .put("transport", "tcp_pcm_s16le").put("host", "127.0.0.1")
-                        .put("port", 7580).put("sample_rate", 8000).put("channels", 1)
+                        .put("transport", "tcp_pcm_s16le").put("host", "self")
+                        .put("port", VoWLANGatewayService.activePcmPort()).put("sample_rate", 8000).put("channels", 1)
                         .put("route_ready", true).put("route_listening", true).toString());
                 default -> error(404, "not_found");
             };
@@ -209,6 +209,7 @@ final class StandaloneAgentGateway {
                         .put("android_confirmed", true)
                         .put("call_uuid", createdID)
                         .put("call_id", createdID)
+                        .put("audio_port", VoWLANGatewayService.activePcmPort())
                         .toString());
             }
             case "/api/v2/ring_group/answer" -> {
