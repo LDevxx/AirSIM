@@ -28,7 +28,7 @@ final class SMSCommandExecutor {
             return AgentCommandDispatcher.Result.failure("号码或短信内容无效");
         }
         if (context.checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return AgentCommandDispatcher.Result.failure("AirSIM 缺少短信发送权限；请在三星应用权限中允许短信");
+            return AgentCommandDispatcher.Result.failure("AirSIM 缺少短信发送权限；请在系统应用权限中允许短信");
         }
         if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING)) {
             return AgentCommandDispatcher.Result.failure("此设备不支持系统短信发送");

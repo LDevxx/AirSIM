@@ -36,7 +36,7 @@
     <color name="airsim_text_light">#0B1B3F</color>
     <color name="airsim_muted_light">#66738A</color>
     <color name="airsim_warning_light">#B0680A</color>
-    <color name="airsim_danger_light">#D3161F</color>
+    <color name="airsim_danger_light">#E0342C</color>
     <color name="airsim_nav_ripple_light">#3366738A</color>
     <color name="airsim_app_bar_surface_light">#FFFFFF</color>
     <!-- 主题强调色（亮色板）：LD-MOD 固定 #2563EB 蓝。 -->

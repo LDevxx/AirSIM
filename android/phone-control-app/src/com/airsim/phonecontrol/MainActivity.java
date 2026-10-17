@@ -649,11 +649,11 @@ public final class MainActivity extends Activity {
 
         LinearLayout headerRow = row();
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label("iOS / macOS 直连端点 (Local & Direct)", 17, CYAN, Gravity.START);
+        TextView title = label("AirChat 直连模式", 17, CYAN, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         headerRow.addView(title, weighted());
 
-        TextView badge = label("LD 1.0 & 2.0 双模", 11, BG, Gravity.CENTER);
+        TextView badge = label("三模", 11, BG, Gravity.CENTER);
         badge.setTypeface(Typeface.DEFAULT_BOLD);
         badge.setBackground(rounded(CYAN, 8, Color.TRANSPARENT, 0));
         badge.setPadding(dp(7), dp(2), dp(7), dp(2));
@@ -717,7 +717,7 @@ public final class MainActivity extends Activity {
         portRow.addView(portInfo, weighted());
         card.addView(portRow, matchWithTop(10));
 
-        TextView guide = description("在 macOS 2.0 (MySim Hub) 或 iOS 端 AirSIM 设置中输入上方 IP 及端口，即可纯离线双向通话及收发短信，免 APNs / 云端 Relay。");
+        TextView guide = description("在 macOS 端、iOS 端和安卓端的 AirChat 设置中输入上方 IP 及端口，即可纯离线双向通话及收发短信，免 APNs / 云端 Relay。");
         card.addView(guide, matchWithTop(6));
 
         boolean hasPairing = hasStoredPairingCredentials();
@@ -994,7 +994,7 @@ public final class MainActivity extends Activity {
 
         root.addView(sectionTitle("当前通话"), matchWithTop(22));
         LinearLayout actions = row();
-        TextView answer = secondaryButton("三星接听");
+        TextView answer = secondaryButton("接听");
         answer.setOnClickListener(ignored -> localCall("answer"));
         TextView hangup = secondaryButton("挂断通话");
         hangup.setTextColor(DANGER);
@@ -1191,7 +1191,7 @@ public final class MainActivity extends Activity {
         // LD-MOD：清除凭据 = 红底白字实心按钮。
         TextView clearPairingBtn = dangerButton("清除 iPhone 配对凭据");
         clearPairingBtn.setEnabled(hasPairing);
-        clearPairingBtn.setAlpha(hasPairing ? 1f : 0.45f);
+        // LD-MOD：清除按钮统一纯红底；禁用仅拦截点击，不做半透明淡化。
         clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
         pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
         // LD-MOD：新增重新配对入口（原状态页「配对 iPhone」按钮迁移至此）。
@@ -1216,7 +1216,6 @@ public final class MainActivity extends Activity {
         voBLECard.addView(configureVoBLE, matchWithTop(10));
         TextView clearVoBLEBtn = dangerButton("清除 VoBLE 配对凭据");
         clearVoBLEBtn.setEnabled(voBLEPaired);
-        clearVoBLEBtn.setAlpha(voBLEPaired ? 1f : 0.45f);
         clearVoBLEBtn.setOnClickListener(ignored -> new AlertDialog.Builder(this)
                 .setTitle("清除旧的 VoBLE 配对？")
                 .setMessage("仅删除蓝牙认证密钥并结束当前 VoBLE 会话；不会清除 VoWLAN、Relay 或通话记录。")
@@ -1698,7 +1697,7 @@ public final class MainActivity extends Activity {
         TextView title = label("一次性配对", 30, TEXT, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title, matchWithTop(8));
-        root.addView(description("让 macOS 2.0 (MySim Hub) 或 iOS 客户端与本设备连接同一局域网、Wi‑Fi 或移动热点"), matchWithTop(6));
+        root.addView(description("让 macOS 端、iOS 端和安卓端的 AirChat 客户端与本设备连接同一局域网、Wi‑Fi 或移动热点"), matchWithTop(6));
 
         LinearLayout pairingCard = card(SURFACE, 28);
         pairingCard.setOrientation(LinearLayout.VERTICAL);
@@ -2309,7 +2308,7 @@ public final class MainActivity extends Activity {
                 String address = localVoWLANAddress();
                 String pcmBackend = RuntimeMode.isStandalone(this) ? "本机 PCM 端口 7580" : "AVF PCM 端口 7580";
                 String reason = !paired ? "尚未与 iPhone 配对"
-                        : address.isEmpty() ? "没有可用的同网 Wi-Fi 或三星热点地址"
+                        : address.isEmpty() ? "没有可用的同网 Wi-Fi 或热点地址"
                         : currentVoWLAN.contains("avf=missing") ? "AVF 虚拟网卡未出现"
                         : currentVoWLAN.contains("agent_ready=false") ? "Agent 未通过 VoWLAN 就绪检查"
                         : currentVoWLAN.contains("pcm_ready=false") ? pcmBackend + "未就绪"
@@ -2738,7 +2737,7 @@ public final class MainActivity extends Activity {
 
     private String vowlanNetworkLine() {
         String host = localVoWLANAddress();
-        return host.isEmpty() ? "同一 Wi‑Fi / 三星热点" : "同一 Wi‑Fi · " + host;
+        return host.isEmpty() ? "同一 Wi‑Fi / 热点" : "同一 Wi‑Fi · " + host;
     }
 
     private boolean vowlanReady() {
