@@ -69,6 +69,8 @@ public final class MainActivity extends Activity {
     private static final String SHIZUKU_STARTUP_CHECKED = "shizuku_startup_checked";
     private static final String OPTIONAL_SMS_PROMPTED = "optional_sms_prompted";
     private static final String THEME_ACCENT_KEY = "theme_accent";
+    /** 主题明暗模式：dark=暗黑灰（默认），light=亮白蓝（LD-MOD）。 */
+    private static final String THEME_MODE_KEY = "theme_mode";
     private static final java.util.concurrent.ExecutorService SMS_SCAN_WORKER =
             Executors.newSingleThreadExecutor();
 
@@ -92,37 +94,44 @@ public final class MainActivity extends Activity {
 
     private void loadThemeColors() {
         android.content.res.Resources res = getResources();
-        BG = res.getColor(R.color.airsim_bg, getTheme());
-        SURFACE = res.getColor(R.color.airsim_surface, getTheme());
-        SURFACE_HIGH = res.getColor(R.color.airsim_surface_high, getTheme());
-        BORDER = res.getColor(R.color.airsim_border, getTheme());
+        boolean light = isLightTheme();
+        BG = res.getColor(light ? R.color.airsim_bg_light : R.color.airsim_bg, getTheme());
+        SURFACE = res.getColor(light ? R.color.airsim_surface_light : R.color.airsim_surface, getTheme());
+        SURFACE_HIGH = res.getColor(light ? R.color.airsim_surface_high_light : R.color.airsim_surface_high, getTheme());
+        BORDER = res.getColor(light ? R.color.airsim_border_light : R.color.airsim_border, getTheme());
         // PRIMARY 不再读固定资源，由用户选择的主题强调色决定（默认薄荷绿）。
-        CYAN = res.getColor(R.color.airsim_cyan, getTheme());
-        BLUE = res.getColor(R.color.airsim_blue, getTheme());
-        TEXT = res.getColor(R.color.airsim_text, getTheme());
-        MUTED = res.getColor(R.color.airsim_muted, getTheme());
-        WARNING = res.getColor(R.color.airsim_warning, getTheme());
-        DANGER = res.getColor(R.color.airsim_danger, getTheme());
+        CYAN = res.getColor(light ? R.color.airsim_cyan_light : R.color.airsim_cyan, getTheme());
+        BLUE = res.getColor(light ? R.color.airsim_blue_light : R.color.airsim_blue, getTheme());
+        TEXT = res.getColor(light ? R.color.airsim_text_light : R.color.airsim_text, getTheme());
+        MUTED = res.getColor(light ? R.color.airsim_muted_light : R.color.airsim_muted, getTheme());
+        WARNING = res.getColor(light ? R.color.airsim_warning_light : R.color.airsim_warning, getTheme());
+        DANGER = res.getColor(light ? R.color.airsim_danger_light : R.color.airsim_danger, getTheme());
         PRIMARY = accentColor(getPreferences(MODE_PRIVATE).getString(THEME_ACCENT_KEY, "green"));
         // Material 3 选中胶囊：当前强调色的 12% 透明度容器，随主题实时派生。
         navActiveContainer = Color.argb(0x1E,
                 Color.red(PRIMARY), Color.green(PRIMARY), Color.blue(PRIMARY));
-        navRipple = res.getColor(R.color.airsim_nav_ripple, getTheme());
-        appBarSurface = res.getColor(R.color.airsim_app_bar_surface, getTheme());
+        navRipple = res.getColor(light ? R.color.airsim_nav_ripple_light : R.color.airsim_nav_ripple, getTheme());
+        appBarSurface = res.getColor(light ? R.color.airsim_app_bar_surface_light : R.color.airsim_app_bar_surface, getTheme());
         agentRefreshColor = MUTED;
     }
 
-    /** 顶部主题色选择：读取当前强调色资源。 */
+    /** 顶部主题色选择：读取当前强调色资源（按明暗模式取对应色板）。 */
     private int accentColor(String key) {
         android.content.res.Resources res = getResources();
+        boolean light = isLightTheme();
         switch (key == null ? "green" : key) {
-            case "cyan": return res.getColor(R.color.airsim_theme_cyan, getTheme());
-            case "blue": return res.getColor(R.color.airsim_theme_blue, getTheme());
-            case "violet": return res.getColor(R.color.airsim_theme_violet, getTheme());
-            case "amber": return res.getColor(R.color.airsim_theme_amber, getTheme());
-            case "pink": return res.getColor(R.color.airsim_theme_pink, getTheme());
-            default: return res.getColor(R.color.airsim_theme_green, getTheme());
+            case "cyan": return res.getColor(light ? R.color.airsim_theme_cyan_light : R.color.airsim_theme_cyan, getTheme());
+            case "blue": return res.getColor(light ? R.color.airsim_theme_blue_light : R.color.airsim_theme_blue, getTheme());
+            case "violet": return res.getColor(light ? R.color.airsim_theme_violet_light : R.color.airsim_theme_violet, getTheme());
+            case "amber": return res.getColor(light ? R.color.airsim_theme_amber_light : R.color.airsim_theme_amber, getTheme());
+            case "pink": return res.getColor(light ? R.color.airsim_theme_pink_light : R.color.airsim_theme_pink, getTheme());
+            default: return res.getColor(light ? R.color.airsim_theme_green_light : R.color.airsim_theme_green, getTheme());
         }
+    }
+
+    /** 当前主题明暗模式（LD-MOD）：dark=暗黑灰（默认），light=亮白蓝。 */
+    private boolean isLightTheme() {
+        return "light".equals(getPreferences(MODE_PRIVATE).getString(THEME_MODE_KEY, "dark"));
     }
 
     private enum Page { STATUS, CALLS, DEBUG, SETTINGS }
@@ -564,17 +573,40 @@ public final class MainActivity extends Activity {
 
     private void showThemeMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
-        String current = getPreferences(MODE_PRIVATE).getString(THEME_ACCENT_KEY, "green");
+        android.content.SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String mode = prefs.getString(THEME_MODE_KEY, "dark");
+        menu.getMenu().add(Menu.NONE, 0, Menu.NONE,
+                ("dark".equals(mode) ? "✓ " : "") + "暗黑灰主题");
+        menu.getMenu().add(Menu.NONE, 1, Menu.NONE,
+                ("light".equals(mode) ? "✓ " : "") + "亮白蓝主题");
+        menu.getMenu().add(Menu.NONE, -1, Menu.NONE, "—— 强调色 ——").setEnabled(false);
+        String current = prefs.getString(THEME_ACCENT_KEY, "green");
         for (int index = 0; index < THEME_ACCENTS.length; index++) {
             String label = THEME_ACCENTS[index][0];
-            menu.getMenu().add(Menu.NONE, index, Menu.NONE,
+            menu.getMenu().add(Menu.NONE, 10 + index, Menu.NONE,
                     THEME_ACCENTS[index][1].equals(current) ? "✓ " + label : label);
         }
         menu.setOnMenuItemClickListener(item -> {
-            applyThemeAccent(THEME_ACCENTS[item.getItemId()][1]);
-            return true;
+            int id = item.getItemId();
+            if (id == 0 || id == 1) {
+                applyThemeMode(id == 1 ? "light" : "dark");
+                return true;
+            }
+            if (id >= 10 && id < 10 + THEME_ACCENTS.length) {
+                applyThemeAccent(THEME_ACCENTS[id - 10][1]);
+                return true;
+            }
+            return false;
         });
         menu.show();
+    }
+
+    /** 切换明暗主题（暗黑灰 / 亮白蓝），整体重建界面。 */
+    private void applyThemeMode(String mode) {
+        getPreferences(MODE_PRIVATE).edit().putString(THEME_MODE_KEY, mode).apply();
+        loadThemeColors();
+        rebuildForThemeChange();
+        toast("light".equals(mode) ? "已切换到亮白蓝主题" : "已切换到暗黑灰主题");
     }
 
     private void applyThemeAccent(String key) {
@@ -717,15 +749,7 @@ public final class MainActivity extends Activity {
 
         boolean hasPairing = hasStoredPairingCredentials();
         if (hasPairing) {
-            TextView unpairBtn = secondaryButton("解除配对 / 清除已配对客户端");
-            unpairBtn.setTextColor(DANGER);
-            unpairBtn.setOnClickListener(v -> new AlertDialog.Builder(this)
-                    .setTitle("解除配对？")
-                    .setMessage("将清除已保存的本地认证密钥与已配对客户端记录；解除后需重新配对才能接入。")
-                    .setPositiveButton("解除配对", (d, w) -> clearPairingCredentials())
-                    .setNegativeButton("取消", null)
-                    .show());
-            card.addView(unpairBtn, matchWithTop(10));
+            // LD-MOD：解除配对入口统一移到「设置 → 配对连接」，直连端点卡只读。
         }
 
         return card;
@@ -914,12 +938,8 @@ public final class MainActivity extends Activity {
 
         root.addView(modeSelector(), matchWithTop(14));
 
-        TextView pairing = primaryButton(paired ? "重新配对 iPhone" : "配对新 iPhone", BLUE);
-        pairing.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_input_add, 0, 0, 0);
-        pairing.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
-        pairing.setCompoundDrawablePadding(dp(8));
-        pairing.setOnClickListener(ignored -> openPairingPage());
-        root.addView(pairing, matchWithTop(14));
+        // LD-MOD：状态页只展示状态；配对入口统一移到「设置 → 配对连接」。
+        // 原状态页的「重新配对 iPhone / 解除配对」按钮已迁移至设置页配对分组。
 
         root.addView(sectionTitle("最近活动"), matchWithTop(22));
         LinearLayout recent = card(SURFACE, 18);
@@ -1180,6 +1200,66 @@ public final class MainActivity extends Activity {
     private View settingsPage() {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
+
+        // ==================== 配对连接（LD-MOD：配对入口统一收纳于此） ====================
+        root.addView(sectionTitle("配对连接"), matchWithTop(18));
+        LinearLayout pairingNavCard = card(SURFACE, 22);
+        pairingNavCard.setOrientation(LinearLayout.VERTICAL);
+        pairingNavCard.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        boolean vowlanPaired = VoWLANPairingStore.configured(this);
+        TextView vowlanRow = settingsNavRow(
+                "VoWLAN 网络配对",
+                vowlanPaired ? "已配对 · 点按重新配对" : "未配对 · 点按开始配对",
+                vowlanPaired ? PRIMARY : WARNING);
+        vowlanRow.setOnClickListener(ignored -> openPairingPage());
+        pairingNavCard.addView(vowlanRow);
+
+        View vowlanDivider = new View(this);
+        vowlanDivider.setBackgroundColor(BORDER);
+        LinearLayout.LayoutParams vowlanDividerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        vowlanDividerParams.leftMargin = dp(16);
+        pairingNavCard.addView(vowlanDivider, vowlanDividerParams);
+
+        boolean voBLEPairedNav = com.airsim.phonecontrol.voble.VoBLEGatewayService.hasStoredCredential(this);
+        TextView vobleRow = settingsNavRow(
+                "VoBLE 蓝牙配对",
+                voBLEPairedNav ? "已认证 · 点按管理凭据" : "未配对 · 点按开始配对",
+                voBLEPairedNav ? PRIMARY : WARNING);
+        vobleRow.setOnClickListener(ignored -> openVoBLEAuthenticationPage());
+        pairingNavCard.addView(vobleRow);
+
+        View unpairDivider = new View(this);
+        unpairDivider.setBackgroundColor(BORDER);
+        LinearLayout.LayoutParams unpairDividerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        unpairDividerParams.leftMargin = dp(16);
+        pairingNavCard.addView(unpairDivider, unpairDividerParams);
+
+        boolean hasPairingAny = hasStoredPairingCredentials();
+        TextView unpairRow = settingsNavRow(
+                "解除配对 / 清除已配对客户端",
+                hasPairingAny ? "清除 VoWLAN、VoBLE 与 Relay 凭据" : "当前没有已保存的配对凭据",
+                hasPairingAny ? DANGER : MUTED);
+        unpairRow.setEnabled(hasPairingAny);
+        unpairRow.setOnClickListener(ignored -> confirmClearPairing());
+        pairingNavCard.addView(unpairRow);
+        root.addView(pairingNavCard, matchWithTop(10));
+
+        // ==================== 外观（LD-MOD：明暗主题切换） ====================
+        root.addView(sectionTitle("外观"), matchWithTop(22));
+        LinearLayout appearanceCard = card(SURFACE, 22);
+        appearanceCard.setOrientation(LinearLayout.VERTICAL);
+        appearanceCard.setPadding(dp(4), dp(4), dp(4), dp(4));
+        boolean lightMode = isLightTheme();
+        TextView themeRow = settingsNavRow(
+                "主题模式",
+                lightMode ? "亮白蓝（点按切换为暗黑灰）" : "暗黑灰（点按切换为亮白蓝）",
+                TEXT);
+        themeRow.setOnClickListener(ignored -> applyThemeMode(lightMode ? "dark" : "light"));
+        appearanceCard.addView(themeRow);
+        root.addView(appearanceCard, matchWithTop(10));
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
         root.addView(sectionTitle(RuntimeMode.agentLabel(this)), matchWithTop(18));
@@ -2808,6 +2888,20 @@ public final class MainActivity extends Activity {
         TextView title = label(value, 18, TEXT, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         return title;
+    }
+
+    /** iOS 风格设置分组行：标题 + 副标题，整行可点，带涟漪反馈（LD-MOD 配对/外观分组用）。 */
+    private TextView settingsNavRow(String title, String subtitle, int titleColor) {
+        TextView rowView = new TextView(this);
+        rowView.setText(title + "\n" + subtitle);
+        rowView.setTextSize(15);
+        rowView.setTextColor(titleColor);
+        rowView.setPadding(dp(16), dp(14), dp(16), dp(14));
+        rowView.setLineSpacing(dp(3), 1f);
+        rowView.setClickable(true);
+        GradientDrawable mask = rounded(SURFACE, 12, Color.TRANSPARENT, 0);
+        rowView.setBackground(new RippleDrawable(ColorStateList.valueOf(navRipple), null, mask));
+        return rowView;
     }
 
     private TextView overline(String value) {

@@ -25,4 +25,24 @@
     <color name="airsim_theme_violet">#8F7BF6</color>
     <color name="airsim_theme_amber">#FFA726</color>
     <color name="airsim_theme_pink">#FF7BA9</color>
+
+    <!-- 亮白蓝主题（LD-MOD）：与 Android 客户端亮白蓝风格对齐；由 theme_mode 偏好切换。 -->
+    <color name="airsim_bg_light">#F2F4F8</color>
+    <color name="airsim_surface_light">#FFFFFF</color>
+    <color name="airsim_surface_high_light">#EDF0F5</color>
+    <color name="airsim_border_light">#D8DEE8</color>
+    <color name="airsim_cyan_light">#0A84FF</color>
+    <color name="airsim_blue_light">#2563EB</color>
+    <color name="airsim_text_light">#16202B</color>
+    <color name="airsim_muted_light">#67707E</color>
+    <color name="airsim_warning_light">#B25F00</color>
+    <color name="airsim_danger_light">#D70015</color>
+    <color name="airsim_nav_ripple_light">#3367707E</color>
+    <color name="airsim_app_bar_surface_light">#FFFFFF</color>
+    <color name="airsim_theme_green_light">#0FA97E</color>
+    <color name="airsim_theme_cyan_light">#0AA9A2</color>
+    <color name="airsim_theme_blue_light">#2563EB</color>
+    <color name="airsim_theme_violet_light">#6D5AE0</color>
+    <color name="airsim_theme_amber_light">#D97C00</color>
+    <color name="airsim_theme_pink_light">#E0517E</color>
 </resources>
