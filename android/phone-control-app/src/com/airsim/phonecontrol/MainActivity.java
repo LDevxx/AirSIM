@@ -68,8 +68,6 @@ public final class MainActivity extends Activity {
     private static final java.util.concurrent.ExecutorService DIAGNOSTIC_WORKER = Executors.newSingleThreadExecutor();
     private static final String SHIZUKU_STARTUP_CHECKED = "shizuku_startup_checked";
     private static final String OPTIONAL_SMS_PROMPTED = "optional_sms_prompted";
-    private static final String THEME_ACCENT_KEY = "theme_accent";
-    /** 主题明暗模式：dark=暗黑灰（默认），light=亮白蓝（LD-MOD）。 */
     private static final String THEME_MODE_KEY = "theme_mode";
     private static final java.util.concurrent.ExecutorService SMS_SCAN_WORKER =
             Executors.newSingleThreadExecutor();
@@ -106,7 +104,7 @@ public final class MainActivity extends Activity {
         MUTED = res.getColor(light ? R.color.airsim_muted_light : R.color.airsim_muted, getTheme());
         WARNING = res.getColor(light ? R.color.airsim_warning_light : R.color.airsim_warning, getTheme());
         DANGER = res.getColor(light ? R.color.airsim_danger_light : R.color.airsim_danger, getTheme());
-        PRIMARY = accentColor(getPreferences(MODE_PRIVATE).getString(THEME_ACCENT_KEY, "green"));
+        PRIMARY = accentColor("blue");
         // Material 3 选中胶囊：当前强调色的 12% 透明度容器，随主题实时派生。
         navActiveContainer = Color.argb(0x1E,
                 Color.red(PRIMARY), Color.green(PRIMARY), Color.blue(PRIMARY));
@@ -115,18 +113,11 @@ public final class MainActivity extends Activity {
         agentRefreshColor = MUTED;
     }
 
-    /** 顶部主题色选择：读取当前强调色资源（按明暗模式取对应色板）。 */
+    /** 顶部主题色选择：读取当前强调色资源（LD-MOD：固定用海洋蓝，不再提供强调色选择）。 */
     private int accentColor(String key) {
         android.content.res.Resources res = getResources();
         boolean light = isLightTheme();
-        switch (key == null ? "green" : key) {
-            case "cyan": return res.getColor(light ? R.color.airsim_theme_cyan_light : R.color.airsim_theme_cyan, getTheme());
-            case "blue": return res.getColor(light ? R.color.airsim_theme_blue_light : R.color.airsim_theme_blue, getTheme());
-            case "violet": return res.getColor(light ? R.color.airsim_theme_violet_light : R.color.airsim_theme_violet, getTheme());
-            case "amber": return res.getColor(light ? R.color.airsim_theme_amber_light : R.color.airsim_theme_amber, getTheme());
-            case "pink": return res.getColor(light ? R.color.airsim_theme_pink_light : R.color.airsim_theme_pink, getTheme());
-            default: return res.getColor(light ? R.color.airsim_theme_green_light : R.color.airsim_theme_green, getTheme());
-        }
+        return res.getColor(light ? R.color.airsim_theme_blue_light : R.color.airsim_theme_blue, getTheme());
     }
 
     /** 当前主题明暗模式（LD-MOD）：dark=暗黑灰（默认），light=亮白蓝。 */
@@ -561,16 +552,9 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    /** 顶部主题色选择：六个强调色预设，当前项打勾，选择后立即生效并持久化。 */
-    private static final String[][] THEME_ACCENTS = {
-            {"薄荷绿（默认）", "green"},
-            {"青碧", "cyan"},
-            {"海洋蓝", "blue"},
-            {"星紫", "violet"},
-            {"琥珀橙", "amber"},
-            {"樱粉", "pink"},
-    };
+    /** LD-MOD：强调色固定为海洋蓝，不再提供强调色预设；仅保留明暗主题切换。 */
 
+    /** 顶部调色板按钮菜单：暗黑灰 / 亮白蓝 明暗主题切换。 */
     private void showThemeMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
         android.content.SharedPreferences prefs = getPreferences(MODE_PRIVATE);
@@ -579,21 +563,9 @@ public final class MainActivity extends Activity {
                 ("dark".equals(mode) ? "✓ " : "") + "暗黑灰主题");
         menu.getMenu().add(Menu.NONE, 1, Menu.NONE,
                 ("light".equals(mode) ? "✓ " : "") + "亮白蓝主题");
-        menu.getMenu().add(Menu.NONE, -1, Menu.NONE, "—— 强调色 ——").setEnabled(false);
-        String current = prefs.getString(THEME_ACCENT_KEY, "green");
-        for (int index = 0; index < THEME_ACCENTS.length; index++) {
-            String label = THEME_ACCENTS[index][0];
-            menu.getMenu().add(Menu.NONE, 10 + index, Menu.NONE,
-                    THEME_ACCENTS[index][1].equals(current) ? "✓ " + label : label);
-        }
         menu.setOnMenuItemClickListener(item -> {
-            int id = item.getItemId();
-            if (id == 0 || id == 1) {
-                applyThemeMode(id == 1 ? "light" : "dark");
-                return true;
-            }
-            if (id >= 10 && id < 10 + THEME_ACCENTS.length) {
-                applyThemeAccent(THEME_ACCENTS[id - 10][1]);
+            if (item.getItemId() == 0 || item.getItemId() == 1) {
+                applyThemeMode(item.getItemId() == 1 ? "light" : "dark");
                 return true;
             }
             return false;
@@ -607,13 +579,6 @@ public final class MainActivity extends Activity {
         loadThemeColors();
         rebuildForThemeChange();
         toast("light".equals(mode) ? "已切换到亮白蓝主题" : "已切换到暗黑灰主题");
-    }
-
-    private void applyThemeAccent(String key) {
-        getPreferences(MODE_PRIVATE).edit().putString(THEME_ACCENT_KEY, key).apply();
-        loadThemeColors();
-        rebuildForThemeChange();
-        toast("主题色已更新");
     }
 
     /** 切换主题后整体重建界面；保留拨号/Agent 表单中尚未保存的输入。 */
@@ -862,44 +827,45 @@ public final class MainActivity extends Activity {
         root.addView(pageTitle("AirSIM Bridge", vName + " · 运行中"));
 
         boolean paired = VoWLANPairingStore.configured(this);
+        // LD-MOD：hero 区块 = AirChat 连接状态。未配对显示「AirChat 尚未连接」并点击进配对页；
+        // 已配对则展示当前连接模式（原「当前连接模式」小区块合并至此，避免重复）。
+        boolean ready = vowlanReady();
         LinearLayout hero = card(SURFACE_HIGH, 24);
         hero.setOrientation(LinearLayout.HORIZONTAL);
         hero.setGravity(Gravity.CENTER_VERTICAL);
         hero.setPadding(dp(18), dp(20), dp(18), dp(20));
-        ImageView wifi = icon(android.R.drawable.ic_menu_share, CYAN, 54);
-        wifi.setBackground(rounded(Color.rgb(20, 80, 73), 28, Color.TRANSPARENT, 0));
+        ImageView wifi = icon(android.R.drawable.ic_menu_share, ready ? CYAN : WARNING, 54);
+        wifi.setBackground(rounded(ready ? Color.rgb(20, 80, 73) : Color.rgb(76, 58, 25), 28, Color.TRANSPARENT, 0));
         wifi.setPadding(dp(14), dp(14), dp(14), dp(14));
         hero.addView(wifi, new LinearLayout.LayoutParams(dp(58), dp(58)));
         LinearLayout heroCopy = column(dp(14));
-        TextView heroTitle = label(
-                paired ? (vowlanReady() ? "VoWLAN 已就绪" : "VoWLAN 准备中") : "VoWLAN 尚未配对",
-                25, vowlanReady() ? CYAN : WARNING, Gravity.START);
-        heroTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        heroCopy.addView(heroTitle);
-        heroCopy.addView(label(vowlanNetworkLine(), 14, MUTED, Gravity.START));
-        hero.addView(heroCopy, weighted());
+        if (!paired) {
+            TextView heroTitle = label("AirChat 尚未连接", 25, WARNING, Gravity.START);
+            heroTitle.setTypeface(Typeface.DEFAULT_BOLD);
+            heroCopy.addView(heroTitle);
+            heroCopy.addView(label("点击开始配对 · " + vowlanNetworkLine(), 14, MUTED, Gravity.START));
+            hero.setOnClickListener(ignored -> openPairingPage());
+        } else {
+            String connectionMode = MainScreenPresentation.connectionModeTitle(
+                    ready, cloudEnabled, cloudRelayConfigured, cloudLastError);
+            String connectionDetail = MainScreenPresentation.connectionModeDetail(
+                    ready, cloudEnabled, cloudRelayConfigured, cloudLastError);
+            int connectionColor = ready ? CYAN
+                    : cloudEnabled && cloudRelayConfigured && cloudLastError.isEmpty() ? BLUE : WARNING;
+            TextView heroTitle = label(connectionMode, 25, connectionColor, Gravity.START);
+            heroTitle.setTypeface(Typeface.DEFAULT_BOLD);
+            heroCopy.addView(heroTitle);
+            heroCopy.addView(label(connectionDetail, 14, MUTED, Gravity.START));
+            hero.setOnClickListener(ignored -> showFeatureDetails(Feature.VOWLAN));
+        }
         hero.setClickable(true);
-        hero.setOnClickListener(ignored -> showFeatureDetails(Feature.VOWLAN));
+        hero.addView(heroCopy, weighted());
         root.addView(hero, matchWithTop(16));
 
         root.addView(iosDirectEndpointCard(), matchWithTop(14));
         root.addView(simSlotsCard(), matchWithTop(14));
 
-        String connectionMode = MainScreenPresentation.connectionModeTitle(
-                vowlanReady(), cloudEnabled, cloudRelayConfigured, cloudLastError);
-        String connectionDetail = MainScreenPresentation.connectionModeDetail(
-                vowlanReady(), cloudEnabled, cloudRelayConfigured, cloudLastError);
-        int connectionColor = vowlanReady() ? CYAN
-                : cloudEnabled && cloudRelayConfigured && cloudLastError.isEmpty() ? BLUE : WARNING;
-        LinearLayout connectionCard = card(SURFACE, 18);
-        connectionCard.setOrientation(LinearLayout.VERTICAL);
-        connectionCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        connectionCard.addView(overline("当前连接模式"));
-        TextView connectionTitle = label(connectionMode, 18, connectionColor, Gravity.START);
-        connectionTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        connectionCard.addView(connectionTitle, matchWithTop(5));
-        connectionCard.addView(label(connectionDetail, 13, MUTED, Gravity.START), matchWithTop(5));
-        root.addView(connectionCard, matchWithTop(12));
+        // LD-MOD：原「当前连接模式」小区块已合并进顶部 AirChat 连接状态区块，不再重复渲染。
 
         LinearLayout bluetoothCard = card(SURFACE, 18);
         bluetoothCard.setOrientation(LinearLayout.VERTICAL);
@@ -1200,69 +1166,63 @@ public final class MainActivity extends Activity {
     private View settingsPage() {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
-
-        // ==================== 配对连接（LD-MOD：配对入口统一收纳于此） ====================
-        root.addView(sectionTitle("配对连接"), matchWithTop(18));
-        LinearLayout pairingNavCard = card(SURFACE, 22);
-        pairingNavCard.setOrientation(LinearLayout.VERTICAL);
-        pairingNavCard.setPadding(dp(4), dp(4), dp(4), dp(4));
-
-        boolean vowlanPaired = VoWLANPairingStore.configured(this);
-        TextView vowlanRow = settingsNavRow(
-                "VoWLAN 网络配对",
-                vowlanPaired ? "已配对 · 点按重新配对" : "未配对 · 点按开始配对",
-                vowlanPaired ? PRIMARY : WARNING);
-        vowlanRow.setOnClickListener(ignored -> openPairingPage());
-        pairingNavCard.addView(vowlanRow);
-
-        View vowlanDivider = new View(this);
-        vowlanDivider.setBackgroundColor(BORDER);
-        LinearLayout.LayoutParams vowlanDividerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        vowlanDividerParams.leftMargin = dp(16);
-        pairingNavCard.addView(vowlanDivider, vowlanDividerParams);
-
-        boolean voBLEPairedNav = com.airsim.phonecontrol.voble.VoBLEGatewayService.hasStoredCredential(this);
-        TextView vobleRow = settingsNavRow(
-                "VoBLE 蓝牙配对",
-                voBLEPairedNav ? "已认证 · 点按管理凭据" : "未配对 · 点按开始配对",
-                voBLEPairedNav ? PRIMARY : WARNING);
-        vobleRow.setOnClickListener(ignored -> openVoBLEAuthenticationPage());
-        pairingNavCard.addView(vobleRow);
-
-        View unpairDivider = new View(this);
-        unpairDivider.setBackgroundColor(BORDER);
-        LinearLayout.LayoutParams unpairDividerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        unpairDividerParams.leftMargin = dp(16);
-        pairingNavCard.addView(unpairDivider, unpairDividerParams);
-
-        boolean hasPairingAny = hasStoredPairingCredentials();
-        TextView unpairRow = settingsNavRow(
-                "解除配对 / 清除已配对客户端",
-                hasPairingAny ? "清除 VoWLAN、VoBLE 与 Relay 凭据" : "当前没有已保存的配对凭据",
-                hasPairingAny ? DANGER : MUTED);
-        unpairRow.setEnabled(hasPairingAny);
-        unpairRow.setOnClickListener(ignored -> confirmClearPairing());
-        pairingNavCard.addView(unpairRow);
-        root.addView(pairingNavCard, matchWithTop(10));
-
-        // ==================== 外观（LD-MOD：明暗主题切换） ====================
-        root.addView(sectionTitle("外观"), matchWithTop(22));
-        LinearLayout appearanceCard = card(SURFACE, 22);
-        appearanceCard.setOrientation(LinearLayout.VERTICAL);
-        appearanceCard.setPadding(dp(4), dp(4), dp(4), dp(4));
-        boolean lightMode = isLightTheme();
-        TextView themeRow = settingsNavRow(
-                "主题模式",
-                lightMode ? "亮白蓝（点按切换为暗黑灰）" : "暗黑灰（点按切换为亮白蓝）",
-                TEXT);
-        themeRow.setOnClickListener(ignored -> applyThemeMode(lightMode ? "dark" : "light"));
-        appearanceCard.addView(themeRow);
-        root.addView(appearanceCard, matchWithTop(10));
+        // LD-MOD：「配对连接」「外观」分组已去除（与溢出菜单/调色板按钮重复）；
+        // 配对入口 = iPhone 配对凭证卡片 + VoBLE 蓝牙配对卡片；主题切换 = 顶部调色板按钮。
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
-        root.addView(sectionTitle(RuntimeMode.agentLabel(this)), matchWithTop(18));
+
+        root.addView(sectionTitle("iPhone 配对凭证"), matchWithTop(18));
+        LinearLayout pairingCredentialCard = card(SURFACE, 22);
+        pairingCredentialCard.setOrientation(LinearLayout.VERTICAL);
+        pairingCredentialCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        boolean hasPairing = hasStoredPairingCredentials();
+        pairingCredentialCard.addView(label(hasPairing ? "已保存 iPhone 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
+                14, hasPairing ? PRIMARY : MUTED, Gravity.START));
+        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；iPhone 需要重新配对才能呼叫。"),
+                matchWithTop(6));
+        // LD-MOD：清除凭据 = 红底白字实心按钮。
+        TextView clearPairingBtn = dangerButton("清除 iPhone 配对凭据");
+        clearPairingBtn.setEnabled(hasPairing);
+        clearPairingBtn.setAlpha(hasPairing ? 1f : 0.45f);
+        clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
+        pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
+        // LD-MOD：新增重新配对入口（原状态页「配对 iPhone」按钮迁移至此）。
+        TextView rePairBtn = primaryButton("重新配对 iPhone", BLUE);
+        rePairBtn.setOnClickListener(ignored -> openPairingPage());
+        pairingCredentialCard.addView(rePairBtn, matchWithTop(10));
+        root.addView(pairingCredentialCard, matchWithTop(10));
+
+        root.addView(sectionTitle("VoBLE 蓝牙配对"), matchWithTop(22));
+        LinearLayout voBLECard = card(SURFACE, 22);
+        voBLECard.setOrientation(LinearLayout.VERTICAL);
+        voBLECard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        boolean voBLEPaired = com.airsim.phonecontrol.voble.VoBLEGatewayService
+                .hasStoredCredential(this);
+        voBLECard.addView(label(voBLEPaired ? "已保存 iPhone 认证凭据" : "尚未保存认证凭据",
+                14, voBLEPaired ? PRIMARY : MUTED, Gravity.START));
+        voBLECard.addView(description("管理六位安全码认证、旧凭据恢复与双端取消配对。"),
+                matchWithTop(6));
+        // LD-MOD：打开 VoBLE 配置 = 蓝底白字；清除 VoBLE 凭据 = 红底白字。
+        TextView configureVoBLE = primaryButton("打开 VoBLE 配对配置", BLUE);
+        configureVoBLE.setOnClickListener(ignored -> openVoBLEAuthenticationPage());
+        voBLECard.addView(configureVoBLE, matchWithTop(10));
+        TextView clearVoBLEBtn = dangerButton("清除 VoBLE 配对凭据");
+        clearVoBLEBtn.setEnabled(voBLEPaired);
+        clearVoBLEBtn.setAlpha(voBLEPaired ? 1f : 0.45f);
+        clearVoBLEBtn.setOnClickListener(ignored -> new AlertDialog.Builder(this)
+                .setTitle("清除旧的 VoBLE 配对？")
+                .setMessage("仅删除蓝牙认证密钥并结束当前 VoBLE 会话；不会清除 VoWLAN、Relay 或通话记录。")
+                .setPositiveButton("清除并重新配对", (dialog, which) -> {
+                    com.airsim.phonecontrol.voble.VoBLEGatewayService.clearStoredCredential(this);
+                    toast("VoBLE 旧凭据已清除");
+                })
+                .setNegativeButton("取消", null)
+                .show());
+        voBLECard.addView(clearVoBLEBtn, matchWithTop(10));
+        root.addView(voBLECard, matchWithTop(10));
+
+        // LD-MOD：内置 Agent 区块下移至 VoBLE 蓝牙配对之后。
+        root.addView(sectionTitle(RuntimeMode.agentLabel(this)), matchWithTop(22));
         LinearLayout agentCard = card(SURFACE, 22);
         agentCard.setOrientation(LinearLayout.VERTICAL);
         agentCard.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -1284,38 +1244,7 @@ public final class MainActivity extends Activity {
         agentCard.addView(save, matchWithTop(12));
         root.addView(agentCard, matchWithTop(10));
 
-        root.addView(sectionTitle("iPhone 配对凭证"), matchWithTop(22));
-        LinearLayout pairingCredentialCard = card(SURFACE, 22);
-        pairingCredentialCard.setOrientation(LinearLayout.VERTICAL);
-        pairingCredentialCard.setPadding(dp(16), dp(16), dp(16), dp(16));
-        boolean hasPairing = hasStoredPairingCredentials();
-        pairingCredentialCard.addView(label(hasPairing ? "已保存 iPhone 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
-                14, hasPairing ? PRIMARY : MUTED, Gravity.START));
-        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；iPhone 需要重新配对才能呼叫。"),
-                matchWithTop(6));
-        TextView clearPairingBtn = secondaryButton("清除 iPhone 配对凭据");
-        clearPairingBtn.setTextColor(hasPairing ? DANGER : MUTED);
-        clearPairingBtn.setEnabled(hasPairing);
-        clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
-        pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
-        root.addView(pairingCredentialCard, matchWithTop(10));
-
         // 「默认通话卡」与「电话角色与诊断」已迁移到通话页底部。
-
-        root.addView(sectionTitle("VoBLE 蓝牙认证"), matchWithTop(22));
-        LinearLayout voBLECard = card(SURFACE, 22);
-        voBLECard.setOrientation(LinearLayout.VERTICAL);
-        voBLECard.setPadding(dp(16), dp(16), dp(16), dp(16));
-        boolean voBLEPaired = com.airsim.phonecontrol.voble.VoBLEGatewayService
-                .hasStoredCredential(this);
-        voBLECard.addView(label(voBLEPaired ? "已保存 iPhone 认证凭据" : "尚未保存认证凭据",
-                14, voBLEPaired ? PRIMARY : MUTED, Gravity.START));
-        voBLECard.addView(description("管理六位安全码认证、旧凭据恢复与双端取消配对。"),
-                matchWithTop(6));
-        TextView configureVoBLE = secondaryButton("打开 VoBLE 认证配置");
-        configureVoBLE.setOnClickListener(ignored -> openVoBLEAuthenticationPage());
-        voBLECard.addView(configureVoBLE, matchWithTop(10));
-        root.addView(voBLECard, matchWithTop(10));
 
 		root.addView(sectionTitle("短信收件箱兜底"), matchWithTop(22));
 		LinearLayout smsCard = card(SURFACE, 22);
@@ -1631,7 +1560,7 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(voBLEAuthenticationRefresh);
         voBLEAuthenticationVisible = true;
         bottomBar.setVisibility(View.GONE);
-        presentSubPage("VoBLE 认证");
+        presentSubPage("VoBLE 蓝牙配对");
         contentHost.removeAllViews();
         contentHost.addView(voBLEAuthenticationPage(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1648,7 +1577,7 @@ public final class MainActivity extends Activity {
         });
         root.addView(back, new LinearLayout.LayoutParams(dp(56), dp(52)));
 
-        TextView title = label("VoBLE 认证", 30, TEXT, Gravity.START);
+        TextView title = label("VoBLE 蓝牙配对", 30, TEXT, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title, matchWithTop(8));
         root.addView(description("蓝牙是独立连接模式；认证凭据不会影响 VoWLAN 或云端 Relay。"),
@@ -2956,6 +2885,18 @@ public final class MainActivity extends Activity {
         button.setMinHeight(dp(50));
         button.setPadding(dp(12), dp(12), dp(12), dp(12));
         button.setBackground(rounded(SURFACE_HIGH, 18, BORDER, 1));
+        button.setClickable(true);
+        button.setFocusable(true);
+        return button;
+    }
+
+    /** 红底白字危险操作按钮（LD-MOD）：清除凭据等破坏性操作统一使用。 */
+    private TextView dangerButton(String title) {
+        TextView button = label(title, 14, Color.WHITE, Gravity.CENTER);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setMinHeight(dp(50));
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setBackground(rounded(DANGER, 18, DANGER, 1));
         button.setClickable(true);
         button.setFocusable(true);
         return button;
