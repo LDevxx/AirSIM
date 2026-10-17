@@ -115,6 +115,7 @@ public final class PairingServer implements Closeable {
             respond(peer, 200, new JSONObject().put("product", "airsim-pair").put("version", 1)
                     .put("session_id", created.id()).put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
                     .put("expires_at", created.expiresAtMillis())
+                    .put("server_time", System.currentTimeMillis())
                     .put("device_name", AndroidAgentIdentity.deviceName())
                     .put("control_port", VoWLANGatewayService.activeControlPort())
                     .put("pcm_port", VoWLANGatewayService.activePcmPort()).toString());
