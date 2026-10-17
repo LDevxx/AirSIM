@@ -59,7 +59,7 @@ public final class VoBLEGatewayService extends Service implements VoBLEGattServe
         return VoBLECredentialStore.androidPrivatePreferences(context).hasCredential(identity);
     }
 
-    /** Local recovery path for a stale iPhone credential. It never opens a remote reset endpoint. */
+    /** Local recovery path for a stale AirChat credential. It never opens a remote reset endpoint. */
     public static void clearStoredCredential(Context context) {
         VoBLEGatewayService active = instance;
         if (active != null) {
@@ -129,7 +129,7 @@ public final class VoBLEGatewayService extends Service implements VoBLEGattServe
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle("AirSIM 蓝牙通话")
-                .setContentText("等待已认证的 iPhone")
+                .setContentText("等待已认证的 AirChat")
                 .setOngoing(true).build();
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification,
@@ -550,7 +550,7 @@ public final class VoBLEGatewayService extends Service implements VoBLEGattServe
         manager.notify(NOTIFICATION_ID, new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle("AirSIM 蓝牙配对")
-                .setContentText("安全码 " + sas + " · 请与 iPhone 核对")
+                .setContentText("安全码 " + sas + " · 请与 AirChat 核对")
                 .setOngoing(true).build());
     }
 
@@ -561,7 +561,7 @@ public final class VoBLEGatewayService extends Service implements VoBLEGattServe
         manager.notify(NOTIFICATION_ID, new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle("AirSIM 蓝牙通话")
-                .setContentText("已连接经过认证的 iPhone")
+                .setContentText("已连接经过认证的 AirChat")
                 .setOngoing(true).build());
     }
 

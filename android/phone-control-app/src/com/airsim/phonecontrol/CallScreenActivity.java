@@ -94,7 +94,7 @@ public final class CallScreenActivity extends Activity {
         }
         boolean ringing = "incoming".equals(TelecomStateMapper.toWireState(state));
         title.setText(ringing ? "AirSIM 来电" : "AirSIM 通话中");
-        detail.setText(ringing ? "来电已转送 iPhone；也可在此处理" : "通话音频优先由 iPhone 接管");
+        detail.setText(ringing ? "来电已转送 AirChat；也可在此处理" : "通话音频优先由 AirChat 接管");
         answer.setVisibility(ringing ? View.VISIBLE : View.GONE);
         reject.setVisibility(ringing ? View.VISIBLE : View.GONE);
         end.setVisibility(ringing ? View.GONE : View.VISIBLE);

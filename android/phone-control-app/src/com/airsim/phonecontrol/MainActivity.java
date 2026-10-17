@@ -913,7 +913,7 @@ public final class MainActivity extends Activity {
         root.addView(modeSelector(), matchWithTop(14));
 
         // LD-MOD：状态页只展示状态；配对入口统一移到「设置 → 配对连接」。
-        // 原状态页的「重新配对 iPhone / 解除配对」按钮已迁移至设置页配对分组。
+        // 原状态页的「重新配对 AirChat / 解除配对」按钮已迁移至设置页配对分组。
 
         root.addView(sectionTitle("最近活动"), matchWithTop(22));
         LinearLayout recent = card(SURFACE, 18);
@@ -1175,7 +1175,7 @@ public final class MainActivity extends Activity {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
         // LD-MOD：「配对连接」「外观」分组已去除（与溢出菜单/调色板按钮重复）；
-        // 配对入口 = iPhone 配对凭证卡片 + VoBLE 蓝牙配对卡片；主题切换 = 顶部调色板按钮。
+        // 配对入口 = AirChat 配对凭证卡片 + VoBLE 蓝牙配对卡片；主题切换 = 顶部调色板按钮。
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
 
@@ -1194,7 +1194,7 @@ public final class MainActivity extends Activity {
         // LD-MOD：清除按钮统一纯红底；禁用仅拦截点击，不做半透明淡化。
         clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
         pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
-        // LD-MOD：新增重新配对入口（原状态页「配对 iPhone」按钮迁移至此）。
+        // LD-MOD：新增重新配对入口（原状态页「配对 AirChat」按钮迁移至此）。
         TextView rePairBtn = primaryButton("重新配对 AirChat", BLUE);
         rePairBtn.setOnClickListener(ignored -> openPairingPage());
         pairingCredentialCard.addView(rePairBtn, matchWithTop(10));

@@ -27,7 +27,7 @@ public final class BridgeNotification {
     private static void createCallChannel(Context context) {
         NotificationChannel channel = new NotificationChannel(
                 CALL_CHANNEL, "AirSIM 来电", NotificationManager.IMPORTANCE_HIGH);
-        // The iPhone is the primary ringer in remote_silent mode. Android still
+        // The AirChat is the primary ringer in remote_silent mode. Android still
         // needs a visible, actionable call surface when the phone is locked.
         channel.setSound(null, null);
         channel.enableVibration(false);
@@ -91,7 +91,7 @@ public final class BridgeNotification {
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         String text = incoming
                 ? (AppConfig.MODE_REMOTE_SILENT.equals(mode)
-                    ? "已转送 iPhone；也可在此处理" : "可在此接听或拒接")
+                    ? "已转送 AirChat；也可在此处理" : "可在此接听或拒接")
                 : "通话进行中 · 点按查看";
         Notification.Builder builder = new Notification.Builder(context, incoming ? CALL_CHANNEL : CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_phone_call)

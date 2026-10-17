@@ -42,13 +42,13 @@ public final class MainScreenPresentation {
             boolean credentialStored, boolean authenticated, String pairingCode) {
         if (authenticated) return "已认证并连接";
         if (!"--- ---".equals(formatPairingCode(pairingCode))) return "请在两端核对安全码";
-        if (credentialStored) return "已保存认证凭据 · 等待 iPhone 连接";
-        return "等待 iPhone 发起首次配对";
+        if (credentialStored) return "已保存认证凭据 · 等待 AirChat 连接";
+        return "等待 AirChat 发起首次配对";
     }
 
     public static String voBLEPairingCode(String pairingCode) {
         String formatted = formatPairingCode(pairingCode);
-        return "--- ---".equals(formatted) ? "等待 iPhone 发起配对" : formatted;
+        return "--- ---".equals(formatted) ? "等待 AirChat 发起配对" : formatted;
     }
 
     public static String recentLogLines(String log, String filter, int maximum) {
@@ -108,8 +108,8 @@ public final class MainScreenPresentation {
         if (line == null || line.isBlank()) return "无事件内容";
         String value = line.toLowerCase(java.util.Locale.ROOT);
         if (value.contains("pairing_completed")) return "VoWLAN 配对完成";
-        if (value.contains("pairing_started")) return "等待 iPhone 配对";
-        if (value.contains("pairing_cleared")) return "iPhone 配对凭据已清除";
+        if (value.contains("pairing_started")) return "等待 AirChat 配对";
+        if (value.contains("pairing_cleared")) return "AirChat 配对凭据已清除";
         if (value.contains("watchdog_created")) return "Agent 守护服务已启动";
         if (value.contains("watchdog_configuration_available")) return "Linux Agent 配置已载入";
         if (value.contains("application_started")) return "应用服务已启动";

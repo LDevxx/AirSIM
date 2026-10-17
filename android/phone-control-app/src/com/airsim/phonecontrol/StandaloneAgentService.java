@@ -79,7 +79,7 @@ public final class StandaloneAgentService extends Service {
                 var snapshot = commandConfiguration.snapshot();
                 JSONObject registration = snapshot.registration();
                 if (registration == null || !store.cloudEnabled()) {
-                    update(registration == null ? "内置 Agent 在线 · 等待 iPhone 配对" : "内置 Agent 在线 · 云端已关闭");
+                    update(registration == null ? "内置 Agent 在线 · 等待 AirChat 配对" : "内置 Agent 在线 · 云端已关闭");
                     Thread.sleep(2_000);
                     continue;
                 }
@@ -326,7 +326,7 @@ public final class StandaloneAgentService extends Service {
         commandSocket = null;
         if (socket != null) socket.close();
         StandaloneCloudMediaManager.get(this).close();
-        update("内置 Agent 在线 · 等待 iPhone 配对");
+        update("内置 Agent 在线 · 等待 AirChat 配对");
         BridgeLog.info("standalone_relay_disconnected_on_pairing_clear");
     }
 
