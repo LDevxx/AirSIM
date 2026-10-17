@@ -68,7 +68,8 @@ public final class VoWLANControlGateway implements Closeable {
             long timestamp = Long.parseLong(request.headers.getOrDefault("x-airsim-vowlan-timestamp", "0"));
             String nonce = request.headers.getOrDefault("x-airsim-vowlan-nonce", "");
             String signature = request.headers.getOrDefault("x-airsim-vowlan-signature", "");
-            if (!"1".equals(request.headers.get("x-airsim-vowlan-version"))) {
+            String vowlanVersion = request.headers.get("x-airsim-vowlan-version");
+            if (!"1".equals(vowlanVersion) && !"2".equals(vowlanVersion)) {
                 respond(peer, 401, "{\"error\":\"authentication_failed\"}");
                 return;
             }
@@ -96,6 +97,12 @@ public final class VoWLANControlGateway implements Closeable {
                         .put("manufacturer", android.os.Build.MANUFACTURER)
                         .put("model", android.os.Build.MODEL)
                         .put("phone_number", AndroidAgentIdentity.phoneNumber(context))
+                        .put("control_port", VoWLANGatewayService.activeControlPort())
+                        .put("pcm_port", VoWLANGatewayService.activePcmPort())
+                        .put("protocol_version", "2.0")
+                        .put("supported_protocols", new org.json.JSONArray(java.util.List.of("1.0", "2.0")))
+                        .put("slots", SIMSlotManager.getSlotsJSON(context))
+                        .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
                         .toString();
             } else {
                 String body = request.body.length == 0 ? null : new String(request.body, StandardCharsets.UTF_8);

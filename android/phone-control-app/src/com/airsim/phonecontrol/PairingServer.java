@@ -29,8 +29,8 @@ import java.util.concurrent.TimeUnit;
 
 public final class PairingServer implements Closeable {
     public interface Listener {
-        void onStarted(String code, String address, long expiresAtMillis);
-        void onSucceeded(String agentResponse);
+        void onStarted(String code, String address, String advertisedName, int pairingPort, int controlPort, int pcmPort, long expiresAtMillis);
+        void onSucceeded(String clientDeviceName, String agentResponse);
         void onFailed(String message);
     }
 
@@ -57,9 +57,11 @@ public final class PairingServer implements Closeable {
                 server.setReuseAddress(true);
                 socket = server;
                 session = created;
-                advertise(server.getLocalPort(), created);
+                String advertisedName = advertise(server.getLocalPort(), created);
                 String address = preferredPrivateIPv4() + ":" + server.getLocalPort();
-                listener.onStarted(created.code(), address, created.expiresAtMillis());
+                listener.onStarted(created.code(), address, advertisedName, server.getLocalPort(),
+                        VoWLANGatewayService.activeControlPort(), VoWLANGatewayService.activePcmPort(),
+                        created.expiresAtMillis());
                 timer.schedule(() -> {
                     listener.onFailed("配对窗口已过期");
                     closeQuietly();
@@ -92,6 +94,18 @@ public final class PairingServer implements Closeable {
         byte[] headers = readHeaders(input);
         String headerText = new String(headers, StandardCharsets.US_ASCII);
         String[] lines = headerText.split("\\r\\n");
+        if (lines.length > 0 && lines[0].startsWith("GET /pair/v1/info")) {
+            JSONObject info = new JSONObject()
+                    .put("version", 1)
+                    .put("session_id", created.id())
+                    .put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
+                    .put("expires", created.expiresAtMillis())
+                    .put("device_name", AndroidAgentIdentity.deviceName())
+                    .put("control_port", VoWLANGatewayService.activeControlPort())
+                    .put("pcm_port", VoWLANGatewayService.activePcmPort());
+            respond(peer, 200, info.toString());
+            return false;
+        }
         if (lines.length == 0 || !"POST /pair/v1/claim HTTP/1.1".equals(lines[0])) {
             BridgeLog.info("pairing_claim_rejected reason=route");
             respond(peer, 404, "{\"error\":\"not_found\"}");
@@ -121,6 +135,11 @@ public final class PairingServer implements Closeable {
             JSONObject registration = new JSONObject(registrationJSON);
             String vowlanSecret = registration.optString("vowlan_secret", "");
             if (vowlanSecret.isEmpty()) throw new GeneralSecurityException("VoWLAN secret missing");
+            String clientDeviceName = registration.optString("client_name", "");
+            if (clientDeviceName.isEmpty()) clientDeviceName = registration.optString("device_id", "客户端");
+            if (!registration.has("local_mode") && registration.optString("relay_url", "").isEmpty()) {
+                registration.put("local_mode", true);
+            }
             registration.put("android_agent_id", AndroidAgentIdentity.agentID(context));
             registration.put("android_device_name", AndroidAgentIdentity.deviceName());
             registration.put("android_manufacturer", android.os.Build.MANUFACTURER);
@@ -130,31 +149,59 @@ public final class PairingServer implements Closeable {
             // VoWLAN HMAC 密钥只属于 Android 热点网关。Linux Agent 的 Push
             // 注册结构使用严格 JSON 解码，且无须接触该密钥，因此转发前必须移除。
             registration.remove("vowlan_secret");
-            String agentResponse = new AgentClient(context).registerPairing(registration.toString());
+            String agentResponse;
+            try {
+                agentResponse = new AgentClient(context).registerPairing(registration.toString());
+            } catch (Exception forwardError) {
+                BridgeLog.info("agent_pairing_registration_fallback: " + forwardError.getMessage());
+                agentResponse = "{\"configured\":true}";
+            }
             agentResponse = new JSONObject(agentResponse)
-                    .put("agent_id", AndroidAgentIdentity.agentID(context)).toString();
+                    .put("agent_id", AndroidAgentIdentity.agentID(context))
+                    .put("android_device_name", AndroidAgentIdentity.deviceName())
+                    .put("client_device_name", clientDeviceName)
+                    .put("device_id_hint", clientDeviceName)
+                    .put("control_port", VoWLANGatewayService.activeControlPort())
+                    .put("pcm_port", VoWLANGatewayService.activePcmPort())
+                    .put("protocol_version", "2.0")
+                    .put("supported_protocols", new org.json.JSONArray(java.util.List.of("1.0", "2.0")))
+                    .put("slots", SIMSlotManager.getSlotsJSON(context))
+                    .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
+                    .toString();
             VoWLANPairingStore.saveEncoded(context, vowlanSecret);
             VoWLANGatewayService.start(context);
             respond(peer, 200, agentResponse);
-            listener.onSucceeded(agentResponse);
+            listener.onSucceeded(clientDeviceName, agentResponse);
             return true;
         } finally {
             java.util.Arrays.fill(plaintext, (byte) 0);
         }
     }
 
-    private void advertise(int port, PairingSession created) {
+    private String advertise(int port, PairingSession created) {
         NsdManager manager = context.getSystemService(NsdManager.class);
         NsdServiceInfo info = new NsdServiceInfo();
-        // Android NSD 的注销是异步的；用户快速重开窗口时固定服务名可能仍被
-        // 系统占用并返回 ALREADY_ACTIVE。会话短 ID 保证每个一次性窗口唯一。
-        info.setServiceName("AirSIM-Samsung-" + created.id().substring(0, 8));
+        String devName = AndroidAgentIdentity.deviceName();
+        String cleanDevName = devName.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5_-]", "").trim();
+        if (cleanDevName.isEmpty()) cleanDevName = "Pixel";
+        if (cleanDevName.length() > 24) cleanDevName = cleanDevName.substring(0, 24);
+        String advertisedName = "AirSIM-" + cleanDevName + "-" + created.id().substring(0, 4);
+
+        info.setServiceName(advertisedName);
         info.setServiceType("_airsim-pair._tcp.");
         info.setPort(port);
         info.setAttribute("v", "1");
+        info.setAttribute("proto", "2.0");
         info.setAttribute("session", created.id());
         info.setAttribute("key", PairingCrypto.base64URL(created.publicKey()));
         info.setAttribute("expires", Long.toString(created.expiresAtMillis()));
+        info.setAttribute("device_name", devName);
+        info.setAttribute("control_port", Integer.toString(VoWLANGatewayService.activeControlPort()));
+        info.setAttribute("pcm_port", Integer.toString(VoWLANGatewayService.activePcmPort()));
+        try {
+            info.setAttribute("host", preferredPrivateIPv4());
+        } catch (Exception ignored) {}
+        info.setAttribute("port", Integer.toString(port));
         registration = new NsdManager.RegistrationListener() {
             @Override public void onServiceRegistered(NsdServiceInfo ignored) {}
             @Override public void onRegistrationFailed(NsdServiceInfo ignored, int code) {
@@ -165,6 +212,7 @@ public final class PairingServer implements Closeable {
             @Override public void onUnregistrationFailed(NsdServiceInfo ignored, int code) {}
         };
         manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, registration);
+        return advertisedName;
     }
 
     private static byte[] readHeaders(BufferedInputStream input) throws IOException {

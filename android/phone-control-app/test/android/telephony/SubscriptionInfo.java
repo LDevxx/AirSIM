@@ -8,5 +8,7 @@ public class SubscriptionInfo {
     public int getSubscriptionId() { return subscriptionId; }
     public boolean isEmbedded() { return embedded; }
     public CharSequence getCarrierName() { return "Carrier"; }
+    public CharSequence getDisplayName() { return "Carrier"; }
+    public String getCountryIso() { return "CN"; }
     public String getNumber() { return number; }
 }

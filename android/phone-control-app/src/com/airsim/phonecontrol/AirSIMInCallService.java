@@ -32,7 +32,12 @@ public final class AirSIMInCallService extends InCallService {
         BridgeLog.info("telecom_call_added call_id=" + DebugRedactor.safeIdentifier(callId)
                 + " direction=" + direction(call) + " state=" + TelecomStateMapper.toWireState(call.getState()));
         Call.Callback callback = new Call.Callback() {
-            @Override public void onStateChanged(Call changed, int state) { emit(changed, state); }
+            @Override public void onStateChanged(Call changed, int state) {
+                if (state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) {
+                    try { changed.disconnect(); } catch (Exception ignored) {}
+                }
+                emit(changed, state);
+            }
             @Override public void onDetailsChanged(Call changed, Call.Details details) { emit(changed, changed.getState()); }
         };
         callbacks.put(call, callback);
@@ -67,7 +72,12 @@ public final class AirSIMInCallService extends InCallService {
         BridgeLog.debug("telecom_state_changed call_id=" + DebugRedactor.safeIdentifier(callId)
                 + " direction=" + callDirection + " state=" + wireState);
         if (!"unknown".equals(wireState) && deduplicator.shouldSend(callId, callDirection, wireState, callNumber)) {
-			emit(callId, callDirection, wireState, callNumber);
+            SIMSlotInfo slot = SIMSlotManager.slotForCall(this, call);
+            int slotId = slot != null ? slot.slotIndex() : -1;
+            int subId = slot != null ? slot.subscriptionId() : -1;
+            String carrier = slot != null ? slot.carrierName() : "";
+            String targetNumber = slot != null ? slot.number() : "";
+			emit(callId, callDirection, wireState, callNumber, slotId, subId, carrier, targetNumber);
 		}
     }
 
@@ -81,6 +91,9 @@ public final class AirSIMInCallService extends InCallService {
 				break;
 			}
 		}
+		if (!CallRepository.isEmpty()) {
+			shouldSilence = true;
+		}
 		localAudio.update(shouldSilence);
 	}
 
@@ -90,14 +103,21 @@ public final class AirSIMInCallService extends InCallService {
     }
 
     private void emit(String callId, String direction, String state, String number) {
+        emit(callId, direction, state, number, -1, -1, "", "");
+    }
+
+    private void emit(String callId, String direction, String state, String number,
+                      int slotId, int subId, String carrier, String targetNumber) {
         com.airsim.phonecontrol.voble.VoBLEGatewayService.publishCallState(
                 this, callId, direction, state, number);
         String eventId = Long.toString(System.currentTimeMillis()) + "-" + events.incrementAndGet();
-        String json = WireJson.callEvent(eventId, callId, direction, state, number, AppConfig.mode(this));
+        String json = WireJson.callEvent(eventId, callId, direction, state, number, AppConfig.mode(this),
+                slotId, subId, carrier, targetNumber);
         network.execute(() -> {
             try {
                 new AgentClient(this).sendEvent(json);
-                BridgeLog.info("call_event_sent state=" + state + " call_id=" + DebugRedactor.safeIdentifier(callId));
+                BridgeLog.info("call_event_sent state=" + state + " call_id=" + DebugRedactor.safeIdentifier(callId)
+                        + (slotId >= 0 ? " slot=" + slotId : ""));
             } catch (Exception error) {
                 BridgeLog.error("call_event_failed state=" + state, error);
             }

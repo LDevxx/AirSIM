@@ -35,9 +35,18 @@ final class SMSCommandExecutor {
         }
 
         try {
-            int subscriptionID = SmsManager.getDefaultSmsSubscriptionId();
+            int subscriptionID = command.subId;
+            if (subscriptionID < 0 && (command.slotId >= 0 || (command.slot != null && command.slot.length() > 0))) {
+                SIMSlotInfo targetSlot = SIMSlotManager.resolveSlot(context, command.slotId, command.slot);
+                if (targetSlot != null && targetSlot.subscriptionId() >= 0) {
+                    subscriptionID = targetSlot.subscriptionId();
+                }
+            }
+            if (subscriptionID < 0) {
+                subscriptionID = SmsManager.getDefaultSmsSubscriptionId();
+            }
             if (subscriptionID == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                return AgentCommandDispatcher.Result.failure("请在三星 SIM 卡设置中选择默认短信 SIM");
+                return AgentCommandDispatcher.Result.failure("请在 SIM 卡设置中选择默认短信 SIM");
             }
             SmsManager manager = managerForSubscription(context, subscriptionID);
             if (manager == null) {

@@ -23,6 +23,16 @@ public final class VoWLANGatewayService extends Service {
     // AirSIM advertises these independent ports through Bonjour.
     public static final int CONTROL_PORT = 7592;
     public static final int PCM_PORT = 7593;
+    private static volatile int activeControlPort = CONTROL_PORT;
+    private static volatile int activePcmPort = PCM_PORT;
+
+    public static int activeControlPort() {
+        return activeControlPort;
+    }
+
+    public static int activePcmPort() {
+        return activePcmPort;
+    }
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final NotificationUpdateGate notificationGate = new NotificationUpdateGate();
     private volatile boolean running;
@@ -136,6 +146,8 @@ public final class VoWLANGatewayService extends Service {
         control = nextControl;
         pcm = nextPCM;
         activeHotspot = host;
+        activeControlPort = control.localPort();
+        activePcmPort = pcm.localPort();
         if (control.localPort() != CONTROL_PORT || pcm.localPort() != PCM_PORT) {
             BridgeLog.info("vowlan_preferred_port_occupied control_port=" + control.localPort()
                     + " pcm_port=" + pcm.localPort());
@@ -184,6 +196,8 @@ public final class VoWLANGatewayService extends Service {
         control = null;
         pcm = null;
         activeHotspot = "";
+        activeControlPort = CONTROL_PORT;
+        activePcmPort = PCM_PORT;
     }
 
     private synchronized boolean hasVoWLANCall() {

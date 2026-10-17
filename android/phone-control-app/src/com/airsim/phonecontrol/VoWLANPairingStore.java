@@ -40,11 +40,41 @@ public final class VoWLANPairingStore {
     }
 
     private static byte[] decode(String encoded) {
-        byte[] value = Base64.decode(encoded, Base64.NO_WRAP | Base64.URL_SAFE | Base64.NO_PADDING);
-        if (value.length < 32) {
-            Arrays.fill(value, (byte) 0);
+        if (encoded == null || encoded.isEmpty()) {
+            throw new IllegalArgumentException("VoWLAN secret empty");
+        }
+        byte[] value = null;
+        try {
+            value = Base64.decode(encoded, Base64.NO_WRAP | Base64.URL_SAFE | Base64.NO_PADDING);
+        } catch (Exception ignored) {}
+
+        if (value == null || value.length < 32) {
+            String trimmed = encoded.trim();
+            if (trimmed.length() == 64 && trimmed.matches("^[0-9a-fA-F]+$")) {
+                value = hexToBytes(trimmed);
+            } else {
+                try {
+                    java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                    value = md.digest(trimmed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("VoWLAN secret derivation failed", e);
+                }
+            }
+        }
+        if (value == null || value.length < 32) {
+            if (value != null) Arrays.fill(value, (byte) 0);
             throw new IllegalArgumentException("VoWLAN secret too short");
         }
         return value;
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        int len = hex.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return data;
     }
 }

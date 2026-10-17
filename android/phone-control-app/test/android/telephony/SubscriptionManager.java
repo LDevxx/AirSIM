@@ -11,4 +11,9 @@ public class SubscriptionManager {
         return info;
     }
     public String getPhoneNumber(int id) { numberReadCount++; return getActiveSubscriptionInfo(id).getNumber(); }
+    public static class OnSubscriptionsChangedListener {
+        public void onSubscriptionsChanged() {}
+    }
+    public void addOnSubscriptionsChangedListener(OnSubscriptionsChangedListener listener) {}
+    public void addOnSubscriptionsChangedListener(java.util.concurrent.Executor executor, OnSubscriptionsChangedListener listener) {}
 }

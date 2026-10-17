@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_icon_background">#FFFFFF</color>
+
+    <!-- AirSIM 深色主题：原先硬编码在 MainActivity 的色值统一收敛到此处，一处修改全局生效。 -->
+    <color name="airsim_bg">#081420</color>
+    <color name="airsim_surface">#111C27</color>
+    <color name="airsim_surface_high">#172431</color>
+    <color name="airsim_border">#2A3A49</color>
+    <color name="airsim_cyan">#49E7E0</color>
+    <color name="airsim_blue">#2F80ED</color>
+    <color name="airsim_text">#F4F7FA</color>
+    <color name="airsim_muted">#A6B3C1</color>
+    <color name="airsim_warning">#FFB84D</color>
+    <color name="airsim_danger">#FF6363</color>
+
+    <!-- Material 3 风格底部导航扩展色：涟漪、应用栏底色；选中胶囊按强调色实时派生。 -->
+    <color name="airsim_nav_ripple">#33A6B3C1</color>
+    <color name="airsim_app_bar_surface">#0D1826</color>
+
+    <!-- 顶部可选主题强调色（palette 按钮切换，写入 theme_accent 偏好）。 -->
+    <color name="airsim_theme_green">#34E5AA</color>
+    <color name="airsim_theme_cyan">#49E7E0</color>
+    <color name="airsim_theme_blue">#4C8DFF</color>
+    <color name="airsim_theme_violet">#8F7BF6</color>
+    <color name="airsim_theme_amber">#FFA726</color>
+    <color name="airsim_theme_pink">#FF7BA9</color>
 </resources>

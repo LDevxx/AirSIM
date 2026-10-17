@@ -114,10 +114,15 @@ final class StandaloneSMSStore {
     }
 
     private JSONObject publicMessage(JSONObject record) throws Exception {
-        return new JSONObject().put("delivery_id", record.getString("delivery_id"))
+        JSONObject message = new JSONObject().put("delivery_id", record.getString("delivery_id"))
                 .put("sender", record.optString("sender"))
                 .put("content", record.optString("content"))
                 .put("timestamp", record.optString("timestamp"));
+        if (record.has("slot_id")) message.put("slot_id", record.optInt("slot_id"));
+        if (record.has("sub_id")) message.put("sub_id", record.optInt("sub_id"));
+        if (record.has("carrier")) message.put("carrier", record.optString("carrier"));
+        if (record.has("recipient")) message.put("recipient", record.optString("recipient"));
+        return message;
     }
 
     private void persist(JSONArray records, SMSRecentDeliveryIDs recent, boolean advanceRevision) {

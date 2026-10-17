@@ -22,7 +22,8 @@ assert_contains "$MANIFEST" 'package="com.airsim.phonecontrol.standalone"' \
   'standalone package id is missing'
 assert_contains "$MANIFEST" 'android:versionCode="81"' \
   'standalone version code does not match the Apps release'
-assert_contains "$MANIFEST" 'android:versionName="0.9.7.1"' \
+# 本仓库为 Local&Direct 修改版：版本号在上游 V0.971-b 之后追加 _LD-MOD 标识。
+assert_contains "$MANIFEST" 'android:versionName="V0.971-b_LD-MOD"' \
   'standalone version name does not match the Apps release'
 assert_contains "$MANIFEST" 'com.airsim.phonecontrol.STANDALONE_AGENT' \
   'standalone runtime flag is missing'

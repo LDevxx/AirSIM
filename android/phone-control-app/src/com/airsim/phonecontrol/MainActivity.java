@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.role.RoleManager;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -13,7 +15,10 @@ import android.graphics.Color;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CountDownTimer;
@@ -24,6 +29,7 @@ import android.telecom.TelecomManager;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -31,8 +37,10 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -58,28 +66,91 @@ public final class MainActivity extends Activity {
     private static final int SHIZUKU_SETUP_REQUEST = 105;
     private static final String SHIZUKU_STARTUP_CHECKED = "shizuku_startup_checked";
     private static final String OPTIONAL_SMS_PROMPTED = "optional_sms_prompted";
+    private static final String THEME_ACCENT_KEY = "theme_accent";
     private static final java.util.concurrent.ExecutorService SMS_SCAN_WORKER =
             Executors.newSingleThreadExecutor();
 
-    private static final int BG = Color.rgb(8, 14, 20);
-    private static final int SURFACE = Color.rgb(17, 28, 39);
-    private static final int SURFACE_HIGH = Color.rgb(23, 36, 49);
-    private static final int BORDER = Color.rgb(42, 58, 73);
-    private static final int PRIMARY = Color.rgb(52, 229, 170);
-    private static final int CYAN = Color.rgb(73, 231, 224);
-    private static final int BLUE = Color.rgb(47, 128, 237);
-    private static final int TEXT = Color.rgb(244, 247, 250);
-    private static final int MUTED = Color.rgb(166, 179, 193);
-    private static final int WARNING = Color.rgb(255, 184, 77);
-    private static final int DANGER = Color.rgb(255, 99, 99);
+    // 主题色统一从 res/values/colors.xml 读取（原先硬编码在此处）；
+    // onCreate 里最先调用 loadThemeColors()，一处修改全局生效。
+    private int BG;
+    private int SURFACE;
+    private int SURFACE_HIGH;
+    private int BORDER;
+    private int PRIMARY;
+    private int CYAN;
+    private int BLUE;
+    private int TEXT;
+    private int MUTED;
+    private int WARNING;
+    private int DANGER;
+    // Material 3 风格导航与应用栏的扩展色。
+    private int navActiveContainer;
+    private int navRipple;
+    private int appBarSurface;
+
+    private void loadThemeColors() {
+        android.content.res.Resources res = getResources();
+        BG = res.getColor(R.color.airsim_bg, getTheme());
+        SURFACE = res.getColor(R.color.airsim_surface, getTheme());
+        SURFACE_HIGH = res.getColor(R.color.airsim_surface_high, getTheme());
+        BORDER = res.getColor(R.color.airsim_border, getTheme());
+        // PRIMARY 不再读固定资源，由用户选择的主题强调色决定（默认薄荷绿）。
+        CYAN = res.getColor(R.color.airsim_cyan, getTheme());
+        BLUE = res.getColor(R.color.airsim_blue, getTheme());
+        TEXT = res.getColor(R.color.airsim_text, getTheme());
+        MUTED = res.getColor(R.color.airsim_muted, getTheme());
+        WARNING = res.getColor(R.color.airsim_warning, getTheme());
+        DANGER = res.getColor(R.color.airsim_danger, getTheme());
+        PRIMARY = accentColor(getPreferences(MODE_PRIVATE).getString(THEME_ACCENT_KEY, "green"));
+        // Material 3 选中胶囊：当前强调色的 12% 透明度容器，随主题实时派生。
+        navActiveContainer = Color.argb(0x1E,
+                Color.red(PRIMARY), Color.green(PRIMARY), Color.blue(PRIMARY));
+        navRipple = res.getColor(R.color.airsim_nav_ripple, getTheme());
+        appBarSurface = res.getColor(R.color.airsim_app_bar_surface, getTheme());
+        agentRefreshColor = MUTED;
+    }
+
+    /** 顶部主题色选择：读取当前强调色资源。 */
+    private int accentColor(String key) {
+        android.content.res.Resources res = getResources();
+        switch (key == null ? "green" : key) {
+            case "cyan": return res.getColor(R.color.airsim_theme_cyan, getTheme());
+            case "blue": return res.getColor(R.color.airsim_theme_blue, getTheme());
+            case "violet": return res.getColor(R.color.airsim_theme_violet, getTheme());
+            case "amber": return res.getColor(R.color.airsim_theme_amber, getTheme());
+            case "pink": return res.getColor(R.color.airsim_theme_pink, getTheme());
+            default: return res.getColor(R.color.airsim_theme_green, getTheme());
+        }
+    }
 
     private enum Page { STATUS, CALLS, DEBUG, SETTINGS }
     private enum Feature { VOWLAN, AGENT, PCM, PUSH, SHIZUKU }
 
     private FrameLayout contentHost;
     private LinearLayout bottomBar;
-    private final List<TextView> navigationItems = new ArrayList<>();
+    private TextView appBarTitle;
+    private ImageButton appBarOverflow;
+    private ImageButton appBarTheme;
+    private final List<NavigationItemView> navigationItems = new ArrayList<>();
     private Page currentPage = Page.STATUS;
+
+    /** Material 3 风格底部导航项：胶囊指示器 + 图标 + 标签，整项带涟漪反馈。 */
+    private static final class NavigationItemView {
+        final LinearLayout view;
+        final View pill;
+        final ImageView iconView;
+        final TextView labelView;
+        final Page page;
+
+        NavigationItemView(LinearLayout view, View pill, ImageView iconView,
+                           TextView labelView, Page page) {
+            this.view = view;
+            this.pill = pill;
+            this.iconView = iconView;
+            this.labelView = labelView;
+            this.page = page;
+        }
+    }
     private HealthTile pcmHealthTile;
     private LiveStatusPoller pcmStatusPoller;
     private boolean resumed;
@@ -94,6 +165,9 @@ public final class MainActivity extends Activity {
     private TextView pairingStatus;
     private TextView pairingCodeView;
     private TextView pairingCountdownView;
+    private TextView pairingDeviceInfoView;
+    private TextView pairingPortsView;
+    private TextView pairingActionButton;
     private TextView voBLEAuthenticationStatusView;
     private TextView voBLEPairingCodeView;
     private TextView voBLEDiagnosticsView;
@@ -104,8 +178,14 @@ public final class MainActivity extends Activity {
     private String lastRenderedDebugFilter;
     private TextView agentRefreshResult;
     private String agentRefreshMessage = "点击刷新以查看 Agent 的实际返回结果";
-    private int agentRefreshColor = MUTED;
+    // 主题在 loadThemeColors() 中恢复默认灰色提示色；不能在字段初始化时读取，
+    // 因为那时主题色尚未从资源加载。
+    private int agentRefreshColor;
     private int agentRefreshGeneration;
+    // 设备信息区块：机主主动点击才生成，复制与反馈完全由机主决定。
+    private TextView deviceInfoText;
+    private TextView deviceInfoCopyButton;
+    private String deviceInfoValue = "";
     private String activeDebugFilter = "全部";
     private boolean realtimeLogging = true;
     private boolean agentOnline;
@@ -123,6 +203,7 @@ public final class MainActivity extends Activity {
     private boolean startupSetupInFlight;
     private boolean startupSetupCompleted;
     private AlertDialog shizukuStartupDialog;
+    private int selectedDialSlot = -1;
     private final Runnable startupSetup = () -> {
         if (startupSetupPending) continueStartupSetup();
     };
@@ -150,6 +231,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        loadThemeColors();
         shizukuStartupPolicy = new ShizukuStartupPolicy(
                 state != null && state.getBoolean(SHIZUKU_STARTUP_CHECKED, false));
         pcmStatusPoller = new LiveStatusPoller(() -> {
@@ -209,6 +291,10 @@ public final class MainActivity extends Activity {
 		if (requestCode == CALL_ACCOUNT_PERMISSION_REQUEST && currentPage == Page.SETTINGS) {
 			showPage(Page.SETTINGS);
 		}
+		if ((requestCode == 101 || requestCode == 104)
+				&& (currentPage == Page.STATUS || currentPage == Page.CALLS)) {
+			showPage(currentPage);
+		}
 	}
 
 	private void requestOptionalSMSPermission() {
@@ -247,13 +333,16 @@ public final class MainActivity extends Activity {
         root.setBackgroundColor(BG);
         root.setFitsSystemWindows(false);
 
+        root.addView(buildAppBar(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         contentHost = new FrameLayout(this);
         root.addView(contentHost, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         bottomBar = buildBottomBar();
         root.addView(bottomBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(78)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(80)));
 
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
@@ -268,30 +357,87 @@ public final class MainActivity extends Activity {
         return root;
     }
 
-    private LinearLayout buildBottomBar() {
+    private LinearLayout buildAppBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER);
-        bar.setPadding(dp(10), dp(6), dp(10), dp(8));
-        bar.setBackground(rounded(SURFACE, 28, BORDER, 1));
-        navigationItems.clear();
-        bar.addView(navigationItem("状态", android.R.drawable.presence_online, Page.STATUS), weighted());
-        bar.addView(navigationItem("通话", android.R.drawable.sym_action_call, Page.CALLS), weighted());
-        bar.addView(navigationItem("调试", android.R.drawable.ic_menu_info_details, Page.DEBUG), weighted());
-        bar.addView(navigationItem("设置", android.R.drawable.ic_menu_preferences, Page.SETTINGS), weighted());
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(18), dp(12), dp(10), dp(8));
+        bar.setBackgroundColor(appBarSurface);
+        appBarTitle = label("", 20, TEXT, Gravity.START);
+        appBarTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        bar.addView(appBarTitle, weighted());
+
+        appBarTheme = new ImageButton(this);
+        appBarTheme.setImageResource(R.drawable.ic_palette);
+        appBarTheme.setImageTintList(ColorStateList.valueOf(TEXT));
+        appBarTheme.setBackground(circularRipple());
+        appBarTheme.setContentDescription("主题色");
+        appBarTheme.setOnClickListener(ignored -> showThemeMenu(appBarTheme));
+        bar.addView(appBarTheme, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        appBarOverflow = new ImageButton(this);
+        appBarOverflow.setImageResource(R.drawable.ic_more);
+        appBarOverflow.setImageTintList(ColorStateList.valueOf(TEXT));
+        appBarOverflow.setBackground(circularRipple());
+        appBarOverflow.setContentDescription("更多操作");
+        appBarOverflow.setOnClickListener(ignored -> showOverflowMenu(appBarOverflow));
+        bar.addView(appBarOverflow, new LinearLayout.LayoutParams(dp(44), dp(44)));
         return bar;
     }
 
-    private TextView navigationItem(String title, int icon, Page page) {
-        TextView item = label(title, 12, MUTED, Gravity.CENTER);
-        item.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0);
-        item.setCompoundDrawableTintList(ColorStateList.valueOf(MUTED));
-        item.setCompoundDrawablePadding(dp(3));
-        item.setPadding(dp(4), dp(4), dp(4), dp(4));
+    private LinearLayout buildBottomBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        bar.setBackgroundColor(SURFACE);
+        navigationItems.clear();
+        bar.addView(navigationItem("状态", R.drawable.nav_status, Page.STATUS), weighted());
+        bar.addView(navigationItem("通话", R.drawable.nav_calls, Page.CALLS), weighted());
+        bar.addView(navigationItem("调试", R.drawable.nav_debug, Page.DEBUG), weighted());
+        bar.addView(navigationItem("设置", R.drawable.nav_settings, Page.SETTINGS), weighted());
+        return bar;
+    }
+
+    private LinearLayout navigationItem(String title, int icon, Page page) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER_HORIZONTAL);
+        item.setPadding(0, dp(4), 0, dp(2));
+        item.setBackground(navigationRipple());
+
+        FrameLayout pill = new FrameLayout(this);
+        pill.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(32)));
+        item.addView(pill);
+
+        ImageView iconView = new ImageView(this);
+        iconView.setImageResource(icon);
+        iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        iconView.setImageTintList(ColorStateList.valueOf(MUTED));
+        pill.addView(iconView, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+
+        TextView labelView = label(title, 12, MUTED, Gravity.CENTER);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.topMargin = dp(3);
+        item.addView(labelView, labelParams);
+
         item.setOnClickListener(ignored -> showPage(page));
-        item.setTag(page);
-        navigationItems.add(item);
+        navigationItems.add(new NavigationItemView(item, pill, iconView, labelView, page));
         return item;
+    }
+
+    /** 底部导航项的圆角涟漪背景，遮罩决定涟漪边界。 */
+    private RippleDrawable navigationRipple() {
+        GradientDrawable mask = rounded(Color.WHITE, 16, Color.TRANSPARENT, 0);
+        return new RippleDrawable(ColorStateList.valueOf(navRipple), null, mask);
+    }
+
+    /** 应用栏圆形涟漪，贴近原生三点按钮的反馈。 */
+    private RippleDrawable circularRipple() {
+        GradientDrawable mask = new GradientDrawable();
+        mask.setShape(GradientDrawable.OVAL);
+        mask.setColor(Color.WHITE);
+        return new RippleDrawable(ColorStateList.valueOf(navRipple), null, mask);
     }
 
     private void showPage(Page page) {
@@ -318,23 +464,374 @@ public final class MainActivity extends Activity {
         contentHost.addView(content, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         updateNavigation();
+        updateAppBar(page);
         if (page == Page.DEBUG && realtimeLogging) handler.post(debugRefresh);
         if (page == Page.STATUS && resumed) pcmStatusPoller.start();
     }
 
     private void updateNavigation() {
-        for (TextView item : navigationItems) {
-            boolean selected = item.getTag() == currentPage;
+        for (NavigationItemView item : navigationItems) {
+            boolean selected = item.page == currentPage;
             int color = selected ? PRIMARY : MUTED;
-            item.setTextColor(color);
-            item.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
-            item.setCompoundDrawableTintList(ColorStateList.valueOf(color));
+            item.pill.setBackground(selected
+                    ? rounded(navActiveContainer, 16, Color.TRANSPARENT, 0)
+                    : null);
+            item.iconView.setImageTintList(ColorStateList.valueOf(color));
+            item.labelView.setTextColor(color);
+            item.labelView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
         }
+    }
+
+    /** 应用栏标题随页面切换；主题色按钮全页可见，三点菜单只在状态与设置页出现。 */
+    private void updateAppBar(Page page) {
+        if (appBarTitle != null) appBarTitle.setText(pageTitleText(page));
+        if (appBarTheme != null) appBarTheme.setVisibility(View.VISIBLE);
+        if (appBarOverflow != null) {
+            appBarOverflow.setVisibility(
+                    page == Page.STATUS || page == Page.SETTINGS ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private String pageTitleText(Page page) {
+        return switch (page) {
+            case CALLS -> "通话";
+            case DEBUG -> "调试";
+            case SETTINGS -> "设置";
+            case STATUS -> "状态";
+        };
+    }
+
+    /** 次级页面（配对、VoBLE 认证）不经过 showPage，需要手动同步应用栏标题并隐藏操作按钮。 */
+    private void presentSubPage(String title) {
+        if (appBarTitle != null) appBarTitle.setText(title);
+        if (appBarTheme != null) appBarTheme.setVisibility(View.GONE);
+        if (appBarOverflow != null) appBarOverflow.setVisibility(View.GONE);
+    }
+
+    /** 原生风格的三点溢出菜单：收纳低频危险操作，均保留二次确认。 */
+    private void showOverflowMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        Menu items = menu.getMenu();
+        items.add(Menu.NONE, 1, Menu.NONE, "清除调试日志");
+        items.add(Menu.NONE, 2, Menu.NONE, "清除 iPhone 配对凭据");
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 1) {
+                confirmClearDebugLog();
+                return true;
+            }
+            if (item.getItemId() == 2) {
+                confirmClearPairing();
+                return true;
+            }
+            return false;
+        });
+        menu.show();
+    }
+
+    private void confirmClearDebugLog() {
+        new AlertDialog.Builder(this)
+                .setTitle("清空调试日志？")
+                .setMessage("将删除本机已记录的诊断日志；不影响通话、配对与云端中继。")
+                .setPositiveButton("清空日志", (dialog, which) -> {
+                    BridgeLog.clear();
+                    refreshDebugLog();
+                    toast("调试日志已清空");
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void confirmClearPairing() {
+        new AlertDialog.Builder(this)
+                .setTitle("清除 iPhone 配对凭据？")
+                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 iPhone 需要重新配对才能控制通话。")
+                .setPositiveButton("清除凭据", (dialog, which) -> clearPairingCredentials())
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 顶部主题色选择：六个强调色预设，当前项打勾，选择后立即生效并持久化。 */
+    private static final String[][] THEME_ACCENTS = {
+            {"薄荷绿（默认）", "green"},
+            {"青碧", "cyan"},
+            {"海洋蓝", "blue"},
+            {"星紫", "violet"},
+            {"琥珀橙", "amber"},
+            {"樱粉", "pink"},
+    };
+
+    private void showThemeMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        String current = getPreferences(MODE_PRIVATE).getString(THEME_ACCENT_KEY, "green");
+        for (int index = 0; index < THEME_ACCENTS.length; index++) {
+            String label = THEME_ACCENTS[index][0];
+            menu.getMenu().add(Menu.NONE, index, Menu.NONE,
+                    THEME_ACCENTS[index][1].equals(current) ? "✓ " + label : label);
+        }
+        menu.setOnMenuItemClickListener(item -> {
+            applyThemeAccent(THEME_ACCENTS[item.getItemId()][1]);
+            return true;
+        });
+        menu.show();
+    }
+
+    private void applyThemeAccent(String key) {
+        getPreferences(MODE_PRIVATE).edit().putString(THEME_ACCENT_KEY, key).apply();
+        loadThemeColors();
+        rebuildForThemeChange();
+        toast("主题色已更新");
+    }
+
+    /** 切换主题后整体重建界面；保留拨号/Agent 表单中尚未保存的输入。 */
+    private void rebuildForThemeChange() {
+        String savedNumber = number == null ? "" : number.getText().toString();
+        String savedEndpoint = endpoint == null ? "" : endpoint.getText().toString();
+        String savedToken = token == null ? "" : token.getText().toString();
+        configureWindow();
+        setContentView(buildShell());
+        showPage(currentPage);
+        if (!savedNumber.isEmpty() && number != null) number.setText(savedNumber);
+        if (!savedEndpoint.isEmpty() && endpoint != null) endpoint.setText(savedEndpoint);
+        if (!savedToken.isEmpty() && token != null) token.setText(savedToken);
+    }
+
+    private record DirectEndpoint(String type, String ip, boolean isTailscale) {}
+
+    private List<DirectEndpoint> directEndpoints() {
+        List<DirectEndpoint> list = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface item = interfaces.nextElement();
+                if (!item.isUp() || item.isLoopback()) continue;
+                String ifName = item.getName() == null ? "" : item.getName().toLowerCase(java.util.Locale.ROOT);
+                Enumeration<InetAddress> addresses = item.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (!(address instanceof Inet4Address)) continue;
+                    String host = address.getHostAddress();
+                    if (host == null || host.startsWith("127.")) continue;
+
+                    boolean isTailscale = VoWLANNetworkPolicy.isTailscaleIPv4(host)
+                            || ifName.startsWith("tun") || ifName.startsWith("tailscale") || ifName.startsWith("wg");
+                    boolean isHotspot = VoWLANNetworkPolicy.isHotspotInterface(ifName, host);
+                    boolean isWiFi = ifName.startsWith("wlan");
+                    boolean isPrivate = VoWLANNetworkPolicy.isPrivateIPv4(host);
+
+                    if (isTailscale) {
+                        list.add(new DirectEndpoint("Tailscale VPN", host, true));
+                    } else if (isHotspot) {
+                        list.add(new DirectEndpoint("热点 AP", host, false));
+                    } else if (isWiFi) {
+                        list.add(new DirectEndpoint("Wi-Fi 局域网", host, false));
+                    } else if (isPrivate) {
+                        list.add(new DirectEndpoint("局域网", host, false));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
+
+    private LinearLayout iosDirectEndpointCard() {
+        LinearLayout card = card(SURFACE, 18);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        LinearLayout headerRow = row();
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = label("iOS / macOS 直连端点 (Local & Direct)", 17, CYAN, Gravity.START);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        headerRow.addView(title, weighted());
+
+        TextView badge = label("LD 1.0 & 2.0 双模", 11, BG, Gravity.CENTER);
+        badge.setTypeface(Typeface.DEFAULT_BOLD);
+        badge.setBackground(rounded(CYAN, 8, Color.TRANSPARENT, 0));
+        badge.setPadding(dp(7), dp(2), dp(7), dp(2));
+        headerRow.addView(badge);
+        card.addView(headerRow);
+
+        int controlPort = VoWLANGatewayService.activeControlPort();
+        int pcmPort = VoWLANGatewayService.activePcmPort();
+
+        TextView devLabel = label("本机网关设备名: " + AndroidAgentIdentity.deviceName(), 13, TEXT, Gravity.START);
+        devLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(devLabel, matchWithTop(6));
+
+        List<DirectEndpoint> endpoints = directEndpoints();
+        if (endpoints.isEmpty()) {
+            TextView emptyText = label("未检测到活跃的 Wi-Fi 或 Tailscale IPv4 连接\n请连接 Wi-Fi 或启动 Tailscale 虚拟网", 13, WARNING, Gravity.START);
+            emptyText.setLineSpacing(dp(2), 1f);
+            card.addView(emptyText, matchWithTop(8));
+        } else {
+            card.addView(overline("直连 IP 地址（点击复制直连 URL）"), matchWithTop(10));
+            for (DirectEndpoint ep : endpoints) {
+                LinearLayout ipRow = card(SURFACE_HIGH, 12);
+                ipRow.setOrientation(LinearLayout.HORIZONTAL);
+                ipRow.setGravity(Gravity.CENTER_VERTICAL);
+                ipRow.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+                TextView typeTag = label(ep.type, 11, ep.isTailscale ? PRIMARY : BLUE, Gravity.CENTER);
+                typeTag.setTypeface(Typeface.DEFAULT_BOLD);
+                typeTag.setBackground(rounded(Color.argb(40, 255, 255, 255), 6, Color.TRANSPARENT, 0));
+                typeTag.setPadding(dp(6), dp(2), dp(6), dp(2));
+                ipRow.addView(typeTag);
+
+                TextView ipView = label(ep.ip, 15, TEXT, Gravity.START);
+                ipView.setTypeface(Typeface.MONOSPACE);
+                LinearLayout.LayoutParams ipParams = weighted();
+                ipParams.leftMargin = dp(10);
+                ipRow.addView(ipView, ipParams);
+
+                TextView copyBtn = label("复制", 12, CYAN, Gravity.CENTER);
+                copyBtn.setTypeface(Typeface.DEFAULT_BOLD);
+                copyBtn.setPadding(dp(8), dp(4), dp(8), dp(4));
+                copyBtn.setBackground(rounded(SURFACE, 8, BORDER, 1));
+                ipRow.addView(copyBtn);
+
+                final String copyUrl = "http://" + ep.ip + ":" + controlPort;
+                ipRow.setClickable(true);
+                ipRow.setOnClickListener(v -> {
+                    getSystemService(ClipboardManager.class).setPrimaryClip(
+                            ClipData.newPlainText("AirSIM Direct URL", copyUrl));
+                    toast("已复制直连地址: " + copyUrl);
+                });
+
+                card.addView(ipRow, matchWithTop(6));
+            }
+        }
+
+        LinearLayout portRow = row();
+        portRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView portInfo = label("控制面 HTTP: " + controlPort + "   |   通话音频 PCM: " + pcmPort, 12, MUTED, Gravity.START);
+        portInfo.setTypeface(Typeface.MONOSPACE);
+        portRow.addView(portInfo, weighted());
+        card.addView(portRow, matchWithTop(10));
+
+        TextView guide = description("在 macOS 2.0 (MySim Hub) 或 iOS 端 AirSIM 设置中输入上方 IP 及端口，即可纯离线双向通话及收发短信，免 APNs / 云端 Relay。");
+        card.addView(guide, matchWithTop(6));
+
+        boolean hasPairing = hasStoredPairingCredentials();
+        if (hasPairing) {
+            TextView unpairBtn = secondaryButton("解除配对 / 清除已配对客户端");
+            unpairBtn.setTextColor(DANGER);
+            unpairBtn.setOnClickListener(v -> new AlertDialog.Builder(this)
+                    .setTitle("解除配对？")
+                    .setMessage("将清除已保存的本地认证密钥与已配对客户端记录；解除后需重新配对才能接入。")
+                    .setPositiveButton("解除配对", (d, w) -> clearPairingCredentials())
+                    .setNegativeButton("取消", null)
+                    .show());
+            card.addView(unpairBtn, matchWithTop(10));
+        }
+
+        return card;
+    }
+
+    private LinearLayout simSlotsCard() {
+        LinearLayout card = card(SURFACE, 18);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        LinearLayout headerRow = row();
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = label("DSDS 动态双卡聚合卡槽", 17, PRIMARY, Gravity.START);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        headerRow.addView(title, weighted());
+
+        TextView badge = label("聚合网关", 11, BG, Gravity.CENTER);
+        badge.setTypeface(Typeface.DEFAULT_BOLD);
+        badge.setBackground(rounded(PRIMARY, 8, Color.TRANSPARENT, 0));
+        badge.setPadding(dp(7), dp(2), dp(7), dp(2));
+        headerRow.addView(badge);
+        card.addView(headerRow);
+
+        card.addView(description("单端口聚合模式 · 实时探测卡槽状态并路由呼叫/短信"), matchWithTop(4));
+
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            TextView warning = label("尚未授予「电话状态」权限，无法探测双卡拓扑与运营商状态", 13, WARNING, Gravity.START);
+            card.addView(warning, matchWithTop(8));
+            TextView grantBtn = secondaryButton("授权读取电话状态");
+            grantBtn.setOnClickListener(v -> requestPermissions(
+                    new String[]{Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS}, 104));
+            card.addView(grantBtn, matchWithTop(10));
+            return card;
+        }
+
+        List<SIMSlotInfo> slots = SIMSlotManager.getActiveSlots(this);
+        if (slots.isEmpty()) {
+            TextView emptyText = label("未检测到已插入的 SIM 卡或活跃的 eSIM 配置文件", 13, MUTED, Gravity.START);
+            card.addView(emptyText, matchWithTop(8));
+        } else {
+            for (SIMSlotInfo slot : slots) {
+                LinearLayout slotRow = card(SURFACE_HIGH, 12);
+                slotRow.setOrientation(LinearLayout.VERTICAL);
+                slotRow.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+                LinearLayout topRow = row();
+                topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                String slotTitle = (slot.isEmbedded() ? "eSIM" : "卡槽 " + (slot.slotIndex() + 1))
+                        + " · " + (slot.carrierName().isEmpty() ? "未知运营商" : slot.carrierName());
+                TextView slotLabel = label(slotTitle, 15, TEXT, Gravity.START);
+                slotLabel.setTypeface(Typeface.DEFAULT_BOLD);
+                topRow.addView(slotLabel, weighted());
+
+                LinearLayout badges = row();
+                badges.setGravity(Gravity.CENTER_VERTICAL);
+
+                if (slot.isDefaultVoice()) {
+                    TextView defVoice = label("默认通话", 10, BG, Gravity.CENTER);
+                    defVoice.setBackground(rounded(CYAN, 6, Color.TRANSPARENT, 0));
+                    defVoice.setPadding(dp(5), dp(1), dp(5), dp(1));
+                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    bp.leftMargin = dp(4);
+                    badges.addView(defVoice, bp);
+                }
+                if (slot.isDefaultSms()) {
+                    TextView defSms = label("默认短信", 10, BG, Gravity.CENTER);
+                    defSms.setBackground(rounded(BLUE, 6, Color.TRANSPARENT, 0));
+                    defSms.setPadding(dp(5), dp(1), dp(5), dp(1));
+                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    bp.leftMargin = dp(4);
+                    badges.addView(defSms, bp);
+                }
+
+                String stateText = "ready".equalsIgnoreCase(slot.simState()) ? "正常就绪" : slot.simState();
+                int stateColor = "ready".equalsIgnoreCase(slot.simState()) ? PRIMARY : WARNING;
+                TextView stateBadge = label(stateText, 10, stateColor, Gravity.CENTER);
+                stateBadge.setBackground(rounded(Color.argb(35, 255, 255, 255), 6, Color.TRANSPARENT, 0));
+                stateBadge.setPadding(dp(5), dp(1), dp(5), dp(1));
+                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                sp.leftMargin = dp(4);
+                badges.addView(stateBadge, sp);
+
+                topRow.addView(badges);
+                slotRow.addView(topRow);
+
+                String num = slot.number().isEmpty() ? "运营商未提供本机号码" : slot.number();
+                String details = "号码: " + num + "  |  Sub ID: " + slot.subscriptionId();
+                TextView detailsView = label(details, 12, MUTED, Gravity.START);
+                detailsView.setTypeface(Typeface.MONOSPACE);
+                slotRow.addView(detailsView, matchWithTop(4));
+
+                card.addView(slotRow, matchWithTop(8));
+            }
+        }
+
+        TextView summary = label("已探测到 " + slots.size() + " 个活跃卡槽 · 支持动态热插拔识别", 12, MUTED, Gravity.START);
+        card.addView(summary, matchWithTop(8));
+
+        return card;
     }
 
     private View statusPage() {
         LinearLayout root = pageRoot();
-        root.addView(pageTitle("AirSIM Bridge", "v" + appVersionName() + " · 运行中"));
+        String vName = appVersionName();
+        if (!vName.startsWith("v") && !vName.startsWith("V")) vName = "v" + vName;
+        root.addView(pageTitle("AirSIM Bridge", vName + " · 运行中"));
 
         boolean paired = VoWLANPairingStore.configured(this);
         LinearLayout hero = card(SURFACE_HIGH, 24);
@@ -356,6 +853,9 @@ public final class MainActivity extends Activity {
         hero.setClickable(true);
         hero.setOnClickListener(ignored -> showFeatureDetails(Feature.VOWLAN));
         root.addView(hero, matchWithTop(16));
+
+        root.addView(iosDirectEndpointCard(), matchWithTop(14));
+        root.addView(simSlotsCard(), matchWithTop(14));
 
         String connectionMode = MainScreenPresentation.connectionModeTitle(
                 vowlanReady(), cloudEnabled, cloudRelayConfigured, cloudLastError);
@@ -440,8 +940,8 @@ public final class MainActivity extends Activity {
 
     private View callsPage() {
         LinearLayout root = pageRoot();
-        root.addView(pageTitle("通话控制", null));
-        root.addView(description("三星 Telecom 本机控制；iPhone 通话优先使用 VoWLAN，局域网不可用时由云端中继。"), matchWithTop(8));
+        // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
+        root.addView(description("Telecom 本机控制；iPhone 通话优先使用 VoWLAN/Tailscale，局域网不可用时由云端中继。"), matchWithTop(8));
 
         LinearLayout dialCard = card(SURFACE, 24);
         dialCard.setOrientation(LinearLayout.VERTICAL);
@@ -449,7 +949,46 @@ public final class MainActivity extends Activity {
         dialCard.addView(overline("拨号号码"));
         number = input("输入电话号码", InputType.TYPE_CLASS_PHONE);
         dialCard.addView(number, matchWithTop(8));
-        TextView call = primaryButton("通过系统 Telecom 拨号", PRIMARY);
+
+        List<SIMSlotInfo> slots = SIMSlotManager.getActiveSlots(this);
+        if (slots.size() > 1) {
+            dialCard.addView(overline("外呼卡槽分发"), matchWithTop(10));
+            LinearLayout slotSelector = row();
+            slotSelector.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView autoBtn = label("跟随系统默认", 12, selectedDialSlot == -1 ? PRIMARY : MUTED, Gravity.CENTER);
+            autoBtn.setBackground(rounded(selectedDialSlot == -1 ? Color.argb(45, 52, 229, 170) : SURFACE_HIGH,
+                    10, selectedDialSlot == -1 ? PRIMARY : BORDER, 1));
+            autoBtn.setPadding(dp(8), dp(6), dp(8), dp(6));
+            autoBtn.setClickable(true);
+            autoBtn.setOnClickListener(v -> {
+                selectedDialSlot = -1;
+                showPage(Page.CALLS);
+            });
+            slotSelector.addView(autoBtn, weightedWithEnd(4));
+
+            for (SIMSlotInfo slot : slots) {
+                int sIdx = slot.slotIndex();
+                boolean isSelected = (selectedDialSlot == sIdx);
+                String btnText = (slot.isEmbedded() ? "eSIM" : "SIM " + (sIdx + 1))
+                        + (slot.carrierName().isEmpty() ? "" : " · " + slot.carrierName());
+                TextView slotBtn = label(btnText, 12, isSelected ? PRIMARY : MUTED, Gravity.CENTER);
+                slotBtn.setBackground(rounded(isSelected ? Color.argb(45, 52, 229, 170) : SURFACE_HIGH,
+                        10, isSelected ? PRIMARY : BORDER, 1));
+                slotBtn.setPadding(dp(8), dp(6), dp(8), dp(6));
+                slotBtn.setClickable(true);
+                slotBtn.setOnClickListener(v -> {
+                    selectedDialSlot = sIdx;
+                    showPage(Page.CALLS);
+                });
+                slotSelector.addView(slotBtn, weightedWithEnd(4));
+            }
+            dialCard.addView(slotSelector, matchWithTop(6));
+        }
+
+        String callBtnText = "通过系统 Telecom 拨号"
+                + (selectedDialSlot >= 0 ? " (卡槽 " + (selectedDialSlot + 1) + ")" : "");
+        TextView call = primaryButton(callBtnText, PRIMARY);
         call.setTextColor(BG);
         call.setOnClickListener(ignored -> placeSystemCall());
         dialCard.addView(call, matchWithTop(14));
@@ -466,19 +1005,84 @@ public final class MainActivity extends Activity {
         actions.addView(hangup, weightedWithStart(5));
         root.addView(actions, matchWithTop(10));
 
-        LinearLayout roleCard = card(SURFACE, 20);
-        roleCard.setOrientation(LinearLayout.VERTICAL);
-        roleCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        roleCard.addView(label(roleText(), 15, TEXT, Gravity.START));
-        roleCard.addView(description("紧急呼叫始终由系统预装拨号器处理。"), matchWithTop(4));
-        roleCard.setOnClickListener(ignored -> requestDialerRole());
-        root.addView(roleCard, matchWithTop(18));
+        // 以下两块由设置页迁移至此（底部）：默认通话卡、电话角色与诊断。
+        // 原角色提示与“设为默认电话应用”入口已合并进诊断卡，功能不减。
+        root.addView(sectionTitle("默认通话卡"), matchWithTop(22));
+        root.addView(defaultCallAccountCard(), matchWithTop(10));
+
+        root.addView(sectionTitle("电话角色与诊断"), matchWithTop(22));
+        root.addView(phoneRoleDiagnosticsCard(), matchWithTop(10));
         return scroll(root);
+    }
+
+    /** 默认通话卡（原设置页区块迁移）：AirSIM 拨号使用的 SIM/eSIM 选择。 */
+    private LinearLayout defaultCallAccountCard() {
+        LinearLayout callAccountCard = card(SURFACE, 22);
+        callAccountCard.setOrientation(LinearLayout.VERTICAL);
+        callAccountCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        DefaultCallAccount.Snapshot accounts = DefaultCallAccount.snapshot(this);
+        String accountKey = DefaultCallAccount.selectedKey(this);
+        boolean available = accountKey.isEmpty() || accounts.accounts().stream()
+                .anyMatch(account -> account.key().equals(accountKey));
+        callAccountCard.addView(label(DefaultCallAccount.selectedLabel(this)
+                + (available ? "" : " · 当前不可用"), 14, available ? TEXT : WARNING, Gravity.START));
+        callAccountCard.addView(description("用于 AirSIM 蓝牙、VoWLAN 与云端拨号，不改变系统通话卡或短信卡。"
+                + "指定卡关闭或移除时会停止拨号，请重新选择。"), matchWithTop(6));
+        if (!accounts.error().isEmpty()) {
+            callAccountCard.addView(description(accounts.error()), matchWithTop(6));
+        } else if (accounts.accounts().isEmpty()) {
+            callAccountCard.addView(description("没有已启用的蜂窝通话卡"), matchWithTop(6));
+        }
+        TextView chooseAccount = secondaryButton("选择默认通话卡");
+        chooseAccount.setOnClickListener(ignored -> chooseDefaultCallAccount());
+        callAccountCard.addView(chooseAccount, matchWithTop(10));
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            TextView grantAccountPermission = secondaryButton("授权读取通话卡");
+            grantAccountPermission.setOnClickListener(ignored -> requestPermissions(
+                    new String[] {Manifest.permission.READ_PHONE_STATE}, CALL_ACCOUNT_PERMISSION_REQUEST));
+            callAccountCard.addView(grantAccountPermission, matchWithTop(10));
+        }
+        return callAccountCard;
+    }
+
+    /** 电话角色与诊断（原设置页区块迁移）：默认电话角色、Agent 刷新与 Debug 开关。 */
+    private LinearLayout phoneRoleDiagnosticsCard() {
+        LinearLayout roleCard = card(SURFACE, 22);
+        roleCard.setOrientation(LinearLayout.VERTICAL);
+        roleCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        roleCard.addView(label(roleText(), 14, TEXT, Gravity.START));
+        roleCard.addView(description("紧急呼叫始终由系统预装拨号器处理。"), matchWithTop(4));
+
+        LinearLayout roleActions = row();
+        TextView dialer = secondaryButton("设为默认电话应用");
+        dialer.setOnClickListener(ignored -> requestDialerRole());
+        roleActions.addView(dialer, weightedWithEnd(5));
+        TextView agent = secondaryButton("刷新 Agent 状态");
+        agent.setOnClickListener(ignored -> refreshAgent(true));
+        roleActions.addView(agent, weightedWithStart(5));
+        roleCard.addView(roleActions, matchWithTop(10));
+
+        agentRefreshResult = label(agentRefreshMessage, 12, agentRefreshColor, Gravity.START);
+        agentRefreshResult.setPadding(dp(12), dp(8), dp(12), dp(8));
+        agentRefreshResult.setBackground(rounded(SURFACE, 12, BORDER, 1));
+        roleCard.addView(agentRefreshResult, matchWithTop(8));
+
+        CheckBox debugEnabled = new CheckBox(this);
+        debugEnabled.setText("启用 Debug 模式");
+        debugEnabled.setTextColor(TEXT);
+        debugEnabled.setButtonTintList(ColorStateList.valueOf(PRIMARY));
+        debugEnabled.setChecked(AppConfig.debugEnabled(this));
+        debugEnabled.setOnCheckedChangeListener((ignored, enabled) -> {
+            BridgeLog.setDebugEnabled(this, enabled);
+            toast(enabled ? "Debug 日志已开启" : "Debug 日志已关闭");
+        });
+        roleCard.addView(debugEnabled, matchWithTop(12));
+        return roleCard;
     }
 
     private View debugPage() {
         LinearLayout root = pageRoot();
-        root.addView(pageTitle("Debug 诊断", null));
+        // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
 		if (CrashReportStore.hasReport(getFilesDir())) {
 			LinearLayout crashCard = card(Color.rgb(57, 31, 36), 22);
 			crashCard.setOrientation(LinearLayout.VERTICAL);
@@ -558,7 +1162,7 @@ public final class MainActivity extends Activity {
 
     private View settingsPage() {
         LinearLayout root = pageRoot();
-        root.addView(pageTitle("设置", null));
+        // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
         root.addView(sectionTitle(RuntimeMode.agentLabel(this)), matchWithTop(18));
@@ -595,42 +1199,11 @@ public final class MainActivity extends Activity {
         TextView clearPairingBtn = secondaryButton("清除 iPhone 配对凭据");
         clearPairingBtn.setTextColor(hasPairing ? DANGER : MUTED);
         clearPairingBtn.setEnabled(hasPairing);
-        clearPairingBtn.setOnClickListener(ignored -> new AlertDialog.Builder(this)
-                .setTitle("清除 iPhone 配对凭据？")
-                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 iPhone 需要重新配对才能控制通话。")
-                .setPositiveButton("清除凭据", (dialog, which) -> clearPairingCredentials())
-                .setNegativeButton("取消", null)
-                .show());
+        clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
         pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
         root.addView(pairingCredentialCard, matchWithTop(10));
 
-        root.addView(sectionTitle("默认通话卡"), matchWithTop(22));
-        LinearLayout callAccountCard = card(SURFACE, 22);
-        callAccountCard.setOrientation(LinearLayout.VERTICAL);
-        callAccountCard.setPadding(dp(16), dp(16), dp(16), dp(16));
-        DefaultCallAccount.Snapshot accounts = DefaultCallAccount.snapshot(this);
-        String accountKey = DefaultCallAccount.selectedKey(this);
-        boolean available = accountKey.isEmpty() || accounts.accounts().stream()
-                .anyMatch(account -> account.key().equals(accountKey));
-        callAccountCard.addView(label(DefaultCallAccount.selectedLabel(this)
-                + (available ? "" : " · 当前不可用"), 14, available ? TEXT : WARNING, Gravity.START));
-        callAccountCard.addView(description("用于 AirSIM 蓝牙、VoWLAN 与云端拨号，不改变系统通话卡或短信卡。"
-                + "指定卡关闭或移除时会停止拨号，请重新选择。"), matchWithTop(6));
-        if (!accounts.error().isEmpty()) {
-            callAccountCard.addView(description(accounts.error()), matchWithTop(6));
-        } else if (accounts.accounts().isEmpty()) {
-            callAccountCard.addView(description("没有已启用的蜂窝通话卡"), matchWithTop(6));
-        }
-        TextView chooseAccount = secondaryButton("选择默认通话卡");
-        chooseAccount.setOnClickListener(ignored -> chooseDefaultCallAccount());
-        callAccountCard.addView(chooseAccount, matchWithTop(10));
-        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            TextView grantAccountPermission = secondaryButton("授权读取通话卡");
-            grantAccountPermission.setOnClickListener(ignored -> requestPermissions(
-                    new String[] {Manifest.permission.READ_PHONE_STATE}, CALL_ACCOUNT_PERMISSION_REQUEST));
-            callAccountCard.addView(grantAccountPermission, matchWithTop(10));
-        }
-        root.addView(callAccountCard, matchWithTop(10));
+        // 「默认通话卡」与「电话角色与诊断」已迁移到通话页底部。
 
         root.addView(sectionTitle("VoBLE 蓝牙认证"), matchWithTop(22));
         LinearLayout voBLECard = card(SURFACE, 22);
@@ -735,36 +1308,51 @@ public final class MainActivity extends Activity {
         shizukuCard.addView(shizukuActions, matchWithTop(12));
         root.addView(shizukuCard, matchWithTop(10));
 
-        root.addView(sectionTitle("电话角色与诊断"), matchWithTop(22));
-        TextView dialer = secondaryButton("设为默认电话应用");
-        dialer.setOnClickListener(ignored -> requestDialerRole());
-        root.addView(dialer, matchWithTop(10));
-        TextView agent = secondaryButton("刷新 Agent 状态");
-        agent.setOnClickListener(ignored -> refreshAgent(true));
-        root.addView(agent, matchWithTop(10));
-        agentRefreshResult = label(agentRefreshMessage, 12, agentRefreshColor, Gravity.START);
-        agentRefreshResult.setPadding(dp(12), dp(8), dp(12), dp(8));
-        agentRefreshResult.setBackground(rounded(SURFACE, 12, BORDER, 1));
-        root.addView(agentRefreshResult, matchWithTop(6));
-
-        CheckBox debugEnabled = new CheckBox(this);
-        debugEnabled.setText("启用 Debug 模式");
-        debugEnabled.setTextColor(TEXT);
-        debugEnabled.setButtonTintList(ColorStateList.valueOf(PRIMARY));
-        debugEnabled.setChecked(AppConfig.debugEnabled(this));
-        debugEnabled.setOnCheckedChangeListener((ignored, enabled) -> {
-            BridgeLog.setDebugEnabled(this, enabled);
-            toast(enabled ? "Debug 日志已开启" : "Debug 日志已关闭");
-        });
-        root.addView(debugEnabled, matchWithTop(14));
+        root.addView(sectionTitle("设备信息"), matchWithTop(22));
+        LinearLayout deviceInfoCard = card(SURFACE, 22);
+        deviceInfoCard.setOrientation(LinearLayout.VERTICAL);
+        deviceInfoCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        deviceInfoCard.addView(description(
+                "汇总本机型号、系统版本、Wi-Fi 与蓝牙能力，便于问题反馈。"
+                        + "不含 IMEI、手机号、MAC 或设备标识；点击获取后可复制，是否粘贴反馈由你自行决定。"));
+        TextView fetchDevice = secondaryButton("获取设备信息");
+        fetchDevice.setTextColor(PRIMARY);
+        fetchDevice.setOnClickListener(ignored -> renderDeviceInfo());
+        deviceInfoCard.addView(fetchDevice, matchWithTop(10));
+        deviceInfoText = label("", 12, TEXT, Gravity.START);
+        deviceInfoText.setTypeface(Typeface.MONOSPACE);
+        deviceInfoText.setTextIsSelectable(true);
+        deviceInfoText.setPadding(dp(12), dp(10), dp(12), dp(10));
+        deviceInfoText.setBackground(rounded(SURFACE_HIGH, 12, BORDER, 1));
+        deviceInfoText.setVisibility(View.GONE);
+        deviceInfoCard.addView(deviceInfoText, matchWithTop(10));
+        deviceInfoCopyButton = secondaryButton("复制设备信息");
+        deviceInfoCopyButton.setTextColor(PRIMARY);
+        deviceInfoCopyButton.setVisibility(View.GONE);
+        deviceInfoCopyButton.setOnClickListener(ignored -> copyDeviceInfo());
+        deviceInfoCard.addView(deviceInfoCopyButton, matchWithTop(10));
+        // 主题切换等场景重建页面时，若已生成过信息则恢复展示，不需要机主重新点击。
+        if (!deviceInfoValue.isEmpty()) {
+            deviceInfoText.setText(deviceInfoValue);
+            deviceInfoText.setVisibility(View.VISIBLE);
+            deviceInfoCopyButton.setVisibility(View.VISIBLE);
+        }
+        root.addView(deviceInfoCard, matchWithTop(10));
 
         root.addView(sectionTitle("关于"), matchWithTop(22));
         LinearLayout aboutCard = card(SURFACE, 22);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
         aboutCard.setPadding(dp(16), dp(16), dp(16), dp(16));
         String runtimeLabel = standaloneRuntime ? "Standalone 内置模式" : "AVF 模式";
-        aboutCard.addView(label("AirSIM Bridge · v" + appVersionName(), 15, TEXT, Gravity.START));
+        String vName = appVersionName();
+        if (!vName.startsWith("v") && !vName.startsWith("V")) vName = "v" + vName;
+        aboutCard.addView(label("AirSIM Bridge · " + vName, 15, TEXT, Gravity.START));
         aboutCard.addView(description("运行架构：" + runtimeLabel + " · 跨设备通话、短信和 VoWLAN"), matchWithTop(4));
+        // 借鉴上游 v0.9.7.2：关于区块提供原项目 Releases 链接，便于对照升级说明。
+        TextView releases = secondaryButton("查看原项目 Releases");
+        releases.setOnClickListener(ignored -> startActivity(new Intent(
+                Intent.ACTION_VIEW, Uri.parse("https://github.com/kai-wu-cortex/AirSIM/releases"))));
+        aboutCard.addView(releases, matchWithTop(10));
         root.addView(aboutCard, matchWithTop(10));
 
         refreshShizukuStatus();
@@ -775,7 +1363,131 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "0.9.7.1";
+            return "V0.971-b_LD-MOD";
+        }
+    }
+
+    // ==================== 设备信息区块 ====================
+
+    /** 机主主动点击才生成；不自动上传任何内容，也不包含 IMEI、手机号、MAC 或设备标识。 */
+    private void renderDeviceInfo() {
+        deviceInfoValue = collectDeviceInfo();
+        deviceInfoText.setText(deviceInfoValue);
+        deviceInfoText.setVisibility(View.VISIBLE);
+        deviceInfoCopyButton.setVisibility(View.VISIBLE);
+    }
+
+    /** 复制到剪贴板即止；是否粘贴、发送给谁，完全由机主自行决定。 */
+    private void copyDeviceInfo() {
+        if (deviceInfoValue == null || deviceInfoValue.isEmpty()) return;
+        getSystemService(ClipboardManager.class).setPrimaryClip(
+                ClipData.newPlainText("AirSIM 设备信息", deviceInfoValue));
+        toast("设备信息已复制；是否粘贴反馈由你决定");
+    }
+
+    private String collectDeviceInfo() {
+        StringBuilder info = new StringBuilder();
+        info.append("== AirSIM 设备信息 ==\n");
+        info.append("App：").append(appVersionName())
+                .append(" · ").append(RuntimeMode.agentLabel(this)).append('\n');
+        info.append("机型：").append(Build.MANUFACTURER).append(' ').append(Build.BRAND)
+                .append(' ').append(Build.MODEL)
+                .append(" [").append(Build.DEVICE).append("]\n");
+        info.append("系统：Android ").append(Build.VERSION.RELEASE)
+                .append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
+        info.append("补丁：").append(Build.VERSION.SECURITY_PATCH).append('\n');
+        info.append("构建：").append(Build.ID).append('\n');
+        info.append("架构：").append(TextUtils.join(", ", Build.SUPPORTED_ABIS)).append('\n');
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        info.append("屏幕：").append(metrics.widthPixels).append('x').append(metrics.heightPixels)
+                .append(" @").append(metrics.densityDpi).append("dpi\n");
+        appendWifiCapability(info);
+        appendBluetoothCapability(info);
+        info.append("电话角色：").append(dialerRoleHeld() ? "已启用" : "未启用").append('\n');
+        info.append("Shizuku：").append(shizukuReady() ? "已授权" : "未授权").append('\n');
+        return info.toString();
+    }
+
+    /** Wi-Fi 能力与当前连接（2.4/5/6GHz、协商速率、Wi-Fi 代际）。逐项容错，读不到就降级说明。 */
+    private void appendWifiCapability(StringBuilder info) {
+        info.append("Wi-Fi：");
+        try {
+            WifiManager wifi = getSystemService(WifiManager.class);
+            if (wifi == null) {
+                info.append("不可读（无 Wi-Fi 服务）\n");
+                return;
+            }
+            StringBuilder caps = new StringBuilder(wifi.isWifiEnabled() ? "已开启" : "已关闭");
+            try {
+                if (wifi.is5GHzBandSupported()) caps.append(" · 支持 5GHz");
+            } catch (Exception ignored) { }
+            if (Build.VERSION.SDK_INT >= 30) {
+                try {
+                    if (wifi.is6GHzBandSupported()) caps.append(" · 支持 6GHz");
+                } catch (Exception ignored) { }
+            }
+            info.append(caps).append('\n');
+            try {
+                WifiInfo connection = wifi.getConnectionInfo();
+                if (connection != null) {
+                    int frequency = connection.getFrequency();
+                    if (frequency >= 2400) {
+                        // 本构建的 android.jar 为精简 stub，不含 API 31+ 的
+                        // getWifiStandard()/getLinkSpeedMbps()；getLinkSpeed() 已弃用但可用。
+                        info.append("Wi-Fi 连接：").append(describeWifiBand(frequency))
+                                .append(" · ").append(connection.getLinkSpeed()).append("Mbps\n");
+                    } else {
+                        info.append("Wi-Fi 连接：未连接\n");
+                    }
+                }
+            } catch (Exception error) {
+                info.append("Wi-Fi 连接：不可读（").append(error.getClass().getSimpleName()).append("）\n");
+            }
+        } catch (Exception error) {
+            info.append("不可读（").append(error.getClass().getSimpleName()).append("）\n");
+        }
+    }
+
+    private String describeWifiBand(int frequencyMHz) {
+        if (frequencyMHz >= 5955 && frequencyMHz < 7115) return "6GHz (Wi-Fi 6E)";
+        if (frequencyMHz >= 4900 && frequencyMHz < 5950) return "5GHz";
+        if (frequencyMHz >= 2400 && frequencyMHz < 2500) return "2.4GHz";
+        return frequencyMHz + "MHz";
+    }
+
+    /** 蓝牙状态与 LE 能力（2M PHY / Coded PHY / 扩展广播均属 BT5 特性）。 */
+    private void appendBluetoothCapability(StringBuilder info) {
+        info.append("蓝牙：");
+        try {
+            BluetoothManager manager = getSystemService(BluetoothManager.class);
+            BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
+            if (adapter == null) {
+                info.append("本机无蓝牙\n");
+                return;
+            }
+            StringBuilder caps = new StringBuilder(adapter.isEnabled() ? "已开启" : "已关闭");
+            caps.append(" · BLE ")
+                    .append(getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)
+                            ? "支持" : "不支持");
+            boolean connectGranted = Build.VERSION.SDK_INT < 31
+                    || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (connectGranted) {
+                try {
+                    if (adapter.isLe2MPhySupported()) caps.append(" · LE 2M PHY (BT5+)");
+                } catch (Exception ignored) { }
+                try {
+                    if (adapter.isLeCodedPhySupported()) caps.append(" · LE Coded PHY (远距)");
+                } catch (Exception ignored) { }
+                try {
+                    if (adapter.isLeExtendedAdvertisingSupported()) caps.append(" · LE 扩展广播");
+                } catch (Exception ignored) { }
+            } else {
+                caps.append(" · 能力详情需授权 BLUETOOTH_CONNECT");
+            }
+            info.append(caps).append('\n');
+        } catch (Exception error) {
+            info.append("不可读（").append(error.getClass().getSimpleName()).append("）\n");
         }
     }
 
@@ -793,8 +1505,9 @@ public final class MainActivity extends Activity {
             StandaloneAgentGateway.get(this).clearPairing();
             StandaloneAgentService.resetPairing(this);
         }
+        CallRepository.disconnectAll();
         refreshAgent(true);
-        toast("iPhone 配对凭据已清除");
+        toast("已解除配对并清除凭据");
         if (currentPage == Page.SETTINGS) {
             showPage(Page.SETTINGS);
         } else if (currentPage == Page.STATUS) {
@@ -807,6 +1520,7 @@ public final class MainActivity extends Activity {
         voBLEAuthenticationVisible = false;
         handler.removeCallbacks(voBLEAuthenticationRefresh);
         bottomBar.setVisibility(View.GONE);
+        presentSubPage("iPhone 配对");
         contentHost.removeAllViews();
         contentHost.addView(pairingPage(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -818,6 +1532,7 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(voBLEAuthenticationRefresh);
         voBLEAuthenticationVisible = true;
         bottomBar.setVisibility(View.GONE);
+        presentSubPage("VoBLE 认证");
         contentHost.removeAllViews();
         contentHost.addView(voBLEAuthenticationPage(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -947,30 +1662,43 @@ public final class MainActivity extends Activity {
         TextView title = label("一次性配对", 30, TEXT, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title, matchWithTop(8));
-        root.addView(description("让 iPhone 与三星连接同一 Wi‑Fi 或三星热点"), matchWithTop(6));
+        root.addView(description("让 macOS 2.0 (MySim Hub) 或 iOS 客户端与本设备连接同一局域网、Wi‑Fi 或移动热点"), matchWithTop(6));
 
         LinearLayout pairingCard = card(SURFACE, 28);
         pairingCard.setOrientation(LinearLayout.VERTICAL);
         pairingCard.setGravity(Gravity.CENTER_HORIZONTAL);
         pairingCard.setPadding(dp(20), dp(24), dp(20), dp(24));
-        pairingCard.addView(label("配对码（一次性）", 14, MUTED, Gravity.CENTER));
+
+        pairingDeviceInfoView = label("可连接设备: " + AndroidAgentIdentity.deviceName(), 14, CYAN, Gravity.CENTER);
+        pairingDeviceInfoView.setTypeface(Typeface.DEFAULT_BOLD);
+        pairingDeviceInfoView.setBackground(rounded(SURFACE_HIGH, 10, BORDER, 1));
+        pairingDeviceInfoView.setPadding(dp(14), dp(8), dp(14), dp(8));
+        pairingCard.addView(pairingDeviceInfoView);
+
+        int controlPort = VoWLANGatewayService.activeControlPort();
+        int pcmPort = VoWLANGatewayService.activePcmPort();
+        pairingPortsView = label("直连控制端口: " + controlPort + " · 通话音频: " + pcmPort, 12, MUTED, Gravity.CENTER);
+        pairingPortsView.setTypeface(Typeface.MONOSPACE);
+        pairingCard.addView(pairingPortsView, matchWithTop(8));
+
+        pairingCard.addView(label("配对验证码（一次性）", 14, MUTED, Gravity.CENTER), matchWithTop(16));
         pairingCodeView = label(
                 MainScreenPresentation.formatPairingCode(pairingCode), 42, TEXT, Gravity.CENTER);
         pairingCodeView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         pairingCodeView.setLetterSpacing(0.05f);
         pairingCodeView.setBackground(rounded(Color.rgb(20, 32, 45), 18, BORDER, 1));
         pairingCodeView.setPadding(dp(18), dp(18), dp(18), dp(18));
-        pairingCard.addView(pairingCodeView, matchWithTop(18));
+        pairingCard.addView(pairingCodeView, matchWithTop(12));
 
         pairingCountdownView = label("正在生成安全密钥…", 14, Color.rgb(135, 183, 238), Gravity.CENTER);
-        pairingCard.addView(pairingCountdownView, matchWithTop(16));
+        pairingCard.addView(pairingCountdownView, matchWithTop(14));
 
-        ImageView link = icon(android.R.drawable.ic_menu_share, CYAN, 92);
-        link.setPadding(dp(22), dp(22), dp(22), dp(22));
-        pairingCard.addView(link, new LinearLayout.LayoutParams(dp(112), dp(112)));
+        ImageView link = icon(android.R.drawable.ic_menu_share, CYAN, 80);
+        link.setPadding(dp(18), dp(18), dp(18), dp(18));
+        pairingCard.addView(link, new LinearLayout.LayoutParams(dp(96), dp(96)));
 
-        pairingStatus = label("正在检查局域网并生成临时密钥…", 15, TEXT, Gravity.CENTER);
-        pairingStatus.setMaxLines(4);
+        pairingStatus = label("正在检查局域网并生成临时密钥…", 14, TEXT, Gravity.CENTER);
+        pairingStatus.setMaxLines(6);
         pairingCard.addView(pairingStatus, matchWithTop(10));
         root.addView(pairingCard, matchWithTop(20));
 
@@ -980,6 +1708,7 @@ public final class MainActivity extends Activity {
             stopPairingServer();
             showPage(Page.STATUS);
         });
+        pairingActionButton = cancel;
         root.addView(cancel, matchWithTop(18));
 
         TextView note = label("临时密钥 · 仅可使用一次", 13, MUTED, Gravity.CENTER);
@@ -1115,8 +1844,18 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            getSystemService(TelecomManager.class).placeCall(Uri.parse("tel:" + value),
-                    DefaultCallAccount.dialExtras(this));
+            Bundle dialExtras = null;
+            if (selectedDialSlot >= 0) {
+                SIMSlotInfo slot = SIMSlotManager.getSlotByIndex(this, selectedDialSlot);
+                if (slot != null && slot.accountHandle() != null) {
+                    dialExtras = new Bundle();
+                    dialExtras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, slot.accountHandle());
+                }
+            }
+            if (dialExtras == null) {
+                dialExtras = DefaultCallAccount.dialExtras(this);
+            }
+            getSystemService(TelecomManager.class).placeCall(Uri.parse("tel:" + value), dialExtras);
         } catch (RuntimeException error) {
             toast(error.getMessage() == null ? "系统拨号失败" : error.getMessage());
         }
@@ -1726,20 +2465,31 @@ public final class MainActivity extends Activity {
         stopPairingServer();
         if (pairingStatus != null) pairingStatus.setText("正在检查局域网并生成临时密钥…");
         pairingServer = new PairingServer(this, new PairingServer.Listener() {
-            @Override public void onStarted(String code, String address, long expiresAtMillis) {
-                BridgeLog.info("pairing_started address=" + address + " expires_at=" + expiresAtMillis);
+            @Override public void onStarted(String code, String address, String advertisedName,
+                                            int pairingPort, int controlPort, int pcmPort, long expiresAtMillis) {
+                BridgeLog.info("pairing_started address=" + address + " advertised=" + advertisedName);
                 pairingCode = code;
                 pairingExpiresAt = expiresAtMillis;
                 runOnUiThread(() -> {
                     if (pairingCodeView != null) pairingCodeView.setText(
                             MainScreenPresentation.formatPairingCode(code));
-                    if (pairingStatus != null) pairingStatus.setText("等待 iPhone 连接…\n" + address);
+                    if (pairingDeviceInfoView != null) {
+                        pairingDeviceInfoView.setText("可连接设备: " + AndroidAgentIdentity.deviceName()
+                                + "\n广播标识: " + advertisedName);
+                    }
+                    if (pairingPortsView != null) {
+                        pairingPortsView.setText("配对端口: " + pairingPort + " · 控制面: " + controlPort + " · PCM音频: " + pcmPort);
+                    }
+                    if (pairingStatus != null) {
+                        pairingStatus.setText("等待 macOS 2.0 / iOS 客户端连接…\n" + address
+                                + "\n控制端口: " + controlPort + " · PCM音频: " + pcmPort);
+                    }
                     startPairingCountdown();
                 });
             }
 
-            @Override public void onSucceeded(String agentResponse) {
-                BridgeLog.info("pairing_completed");
+            @Override public void onSucceeded(String clientDeviceName, String agentResponse) {
+                BridgeLog.info("pairing_completed client=" + clientDeviceName);
                 boolean localMode = false;
                 try {
                     localMode = new JSONObject(agentResponse).optBoolean("local_mode", false);
@@ -1747,16 +2497,28 @@ public final class MainActivity extends Activity {
                     // Older Agent responses do not carry a mode marker.
                 }
                 boolean pairedLocally = localMode;
+                int controlPort = VoWLANGatewayService.activeControlPort();
+                int pcmPort = VoWLANGatewayService.activePcmPort();
                 runOnUiThread(() -> {
                     cancelPairingCountdown();
                     if (pairingCodeView != null) {
                         pairingCodeView.setText("配对成功");
                         pairingCodeView.setTextSize(28);
                     }
-                    if (pairingCountdownView != null) pairingCountdownView.setText("VoWLAN 密钥已安全保存");
-                    if (pairingStatus != null) pairingStatus.setText(pairedLocally
-                            ? "本地模式已启用，不使用 Relay 或 Push"
-                            : "iOS Push 身份已写入 Android Agent");
+                    if (pairingCountdownView != null) pairingCountdownView.setText("VoWLAN 密钥已加密保存");
+                    if (pairingDeviceInfoView != null) {
+                        pairingDeviceInfoView.setText("已接入客户端: " + clientDeviceName);
+                    }
+                    if (pairingStatus != null) {
+                        pairingStatus.setText("已成功配对接入设备：" + clientDeviceName
+                                + "\n支持协议: LD 2.0 / 1.0 双兼容"
+                                + "\n控制端口: " + controlPort + " · 音频端口: " + pcmPort
+                                + (pairedLocally ? "\n(本地直连模式，免 APNs / Relay)" : "\n(已配置云端 Push)"));
+                    }
+                    if (pairingActionButton != null) {
+                        pairingActionButton.setText("完成并返回");
+                        pairingActionButton.setTextColor(CYAN);
+                    }
                     refreshAgent();
                 });
             }

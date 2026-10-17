@@ -68,7 +68,17 @@ public final class VoWLANNetworkPolicy {
         if (address.isSiteLocalAddress() || address.isLinkLocalAddress() || address.isLoopbackAddress()) {
             return true;
         }
-        return isTailscaleIPv4(address.getHostAddress());
+        String host = address.getHostAddress();
+        if (host != null) {
+            if (host.startsWith("::ffff:")) {
+                String ipv4 = host.substring(7);
+                return isPrivateIPv4(ipv4) || isTailscaleIPv4(ipv4) || "127.0.0.1".equals(ipv4);
+            }
+            if (host.contains("%")) {
+                host = host.substring(0, host.indexOf("%"));
+            }
+        }
+        return isTailscaleIPv4(host) || isPrivateIPv4(host);
     }
 
     public static boolean shouldAdvertise(

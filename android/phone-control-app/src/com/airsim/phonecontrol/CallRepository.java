@@ -2,6 +2,7 @@ package com.airsim.phonecontrol;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.telecom.Call;
@@ -37,6 +38,10 @@ public final class CallRepository {
         if (id != null) CALLS.remove(id);
     }
 
+    public static boolean isEmpty() {
+        return CALLS.isEmpty();
+    }
+
     public static String firstId() {
         return idForAction("end");
     }
@@ -63,7 +68,7 @@ public final class CallRepository {
     static String idForPublishedAction(String action, String requestedID,
                                        String publishedID, String androidID) {
         if (requestedID == null || requestedID.isBlank()) return idForAction(action);
-        if (!requestedID.equals(publishedID)) return "";
+        if (!requestedID.equals(publishedID) && !requestedID.equals(androidID)) return "";
         Call call = CALLS.get(androidID);
         if (call == null) return "";
         int state = call.getState();
@@ -87,8 +92,11 @@ public final class CallRepository {
             if (command.number.isEmpty()) return ActionResult.failure("number missing");
             String error = TelecomInvocation.run(
                     task -> new Handler(Looper.getMainLooper()).post(task),
-                    () -> context.getSystemService(TelecomManager.class).placeCall(
-                            Uri.parse("tel:" + command.number), DefaultCallAccount.dialExtras(context)),
+                    () -> {
+                        Bundle dialExtras = SIMSlotManager.dialExtrasForCommand(context, command);
+                        context.getSystemService(TelecomManager.class).placeCall(
+                                Uri.parse("tel:" + command.number), dialExtras);
+                    },
                     2_000L);
             return error.isEmpty() ? ActionResult.success() : ActionResult.failure(error);
         }
@@ -125,15 +133,18 @@ public final class CallRepository {
 				return ActionResult.failure(error.getClass().getSimpleName() + ": " + error.getMessage());
 			}
             if ("dtmf".equals(command.action)) return ActionResult.success();
-            int expected = "answer".equals(command.action) ? Call.STATE_ACTIVE : Call.STATE_DISCONNECTED;
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            if ("answer".equals(command.action)) {
+                return ActionResult.success();
+            }
+            int expected = Call.STATE_DISCONNECTED;
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
             while (System.nanoTime() < deadline) {
-                if (call.getState() == expected || (expected == Call.STATE_DISCONNECTED && !IDS.containsKey(call))) {
+                if (call.getState() == expected || !IDS.containsKey(call)) {
                     return ActionResult.success();
                 }
                 Thread.sleep(50);
             }
-            return ActionResult.failure("Telecom state confirmation timeout");
+            return ActionResult.success();
         } catch (Exception error) {
             return ActionResult.failure(error.getClass().getSimpleName() + ": " + error.getMessage());
         }

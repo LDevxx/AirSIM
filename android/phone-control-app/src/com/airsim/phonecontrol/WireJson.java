@@ -4,13 +4,33 @@ public final class WireJson {
     private WireJson() {}
 
     public static String callEvent(String eventId, String callId, String direction, String state, String number, String mode) {
-        return "{" +
-                field("event_id", eventId) + "," +
-                field("call_id", callId) + "," +
-                field("direction", direction) + "," +
-                field("state", state) + "," +
-                field("number", number) + "," +
-                field("mode", mode) + "}";
+        return callEvent(eventId, callId, direction, state, number, mode, -1, -1, "", "");
+    }
+
+    public static String callEvent(String eventId, String callId, String direction, String state, String number, String mode,
+                                   int slotId, int subId, String carrier, String targetNumber) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{")
+                .append(field("event_id", eventId)).append(",")
+                .append(field("call_id", callId)).append(",")
+                .append(field("direction", direction)).append(",")
+                .append(field("state", state)).append(",")
+                .append(field("number", number)).append(",")
+                .append(field("mode", mode));
+        if (slotId >= 0) {
+            sb.append(",\"slot_id\":").append(slotId);
+        }
+        if (subId >= 0) {
+            sb.append(",\"sub_id\":").append(subId);
+        }
+        if (carrier != null && carrier.length() > 0) {
+            sb.append(",").append(field("carrier", carrier));
+        }
+        if (targetNumber != null && targetNumber.length() > 0) {
+            sb.append(",").append(field("target_number", targetNumber));
+        }
+        sb.append("}");
+        return sb.toString();
     }
 
     public static String commandResult(String id, boolean success, String error) {
@@ -23,10 +43,33 @@ public final class WireJson {
 	}
 
 	public static String smsEvent(String eventId, String deliveryId, String sender, String content, String timestamp) {
+        return smsEvent(eventId, deliveryId, sender, content, timestamp, -1, -1, "", "");
+    }
+
+	public static String smsEvent(String eventId, String deliveryId, String sender, String content, String timestamp,
+                                  int slotId, int subId, String carrier, String recipient) {
 		String displaySender = sender == null || sender.isBlank() ? "未知号码" : sender;
-		return "{" + field("event_id", eventId) + "," + field("delivery_id", deliveryId) + ","
-				+ field("sender", displaySender) + "," + field("content", content) + ","
-				+ field("timestamp", timestamp) + "}";
+		StringBuilder sb = new StringBuilder();
+		sb.append("{")
+				.append(field("event_id", eventId)).append(",")
+				.append(field("delivery_id", deliveryId)).append(",")
+				.append(field("sender", displaySender)).append(",")
+				.append(field("content", content)).append(",")
+				.append(field("timestamp", timestamp));
+		if (slotId >= 0) {
+			sb.append(",\"slot_id\":").append(slotId);
+		}
+		if (subId >= 0) {
+			sb.append(",\"sub_id\":").append(subId);
+		}
+		if (carrier != null && carrier.length() > 0) {
+			sb.append(",").append(field("carrier", carrier));
+		}
+		if (recipient != null && recipient.length() > 0) {
+			sb.append(",").append(field("recipient", recipient));
+		}
+		sb.append("}");
+		return sb.toString();
 	}
 
     private static String field(String key, String value) {

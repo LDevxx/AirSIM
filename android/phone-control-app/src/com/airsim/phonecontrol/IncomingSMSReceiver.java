@@ -35,16 +35,32 @@ public final class IncomingSMSReceiver extends BroadcastReceiver {
                 if (content.length() == 0) return;
                 long eventTimestamp = timestamp > 0 ? timestamp : System.currentTimeMillis();
                 String id = SMSDeliveryIdentity.id(sender, content.toString(), eventTimestamp);
+
+                int subId = intent.getIntExtra("subscription",
+                        intent.getIntExtra(android.telephony.SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX,
+                        intent.getIntExtra("android.telephony.extra.SUBSCRIPTION_INDEX", -1)));
+                int slotId = intent.getIntExtra("slot",
+                        intent.getIntExtra("simId",
+                        intent.getIntExtra("slot_id", -1)));
+
+                SIMSlotInfo slot = SIMSlotManager.slotForSMS(application, subId, slotId);
+                int finalSlotId = slot != null ? slot.slotIndex() : slotId;
+                int finalSubId = slot != null ? slot.subscriptionId() : subId;
+                String carrier = slot != null ? slot.carrierName() : "";
+                String recipient = slot != null ? slot.number() : "";
+
                 JSONObject event = new JSONObject(WireJson.smsEvent(UUID.randomUUID().toString(),
                         id, sender == null ? "" : sender, content.toString(),
-                        Instant.ofEpochMilli(eventTimestamp).toString()));
+                        Instant.ofEpochMilli(eventTimestamp).toString(),
+                        finalSlotId, finalSubId, carrier, recipient));
                 if (RuntimeMode.isStandalone(application)) {
                     StandaloneAgentGateway.get(application).sendSMSEvent(event.toString());
                 } else {
                     new StandaloneSMSStore(application).add(event, true);
                     AgentWatchdogService.start(application);
                 }
-                BridgeLog.info("incoming_sms_queued delivery_id=" + DebugRedactor.safeIdentifier(id));
+                BridgeLog.info("incoming_sms_queued delivery_id=" + DebugRedactor.safeIdentifier(id)
+                        + (finalSlotId >= 0 ? " slot=" + finalSlotId : ""));
             } catch (Exception error) {
                 BridgeLog.error("incoming_sms_queue_failed", error);
             } finally {

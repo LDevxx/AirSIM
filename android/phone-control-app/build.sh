@@ -73,16 +73,9 @@ done
 SHIZUKU_JARS+=("$DEPS/androidx-annotation.jar")
 CLASSPATH="$ANDROID_JAR:$(IFS=:; echo "${SHIZUKU_JARS[*]}")"
 
-SOURCES=()
-while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/src" -name '*.java' -print0)
-while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/../phone-audio-bridge/src" -name '*.java' -print0)
-"$JAVA_HOME/bin/javac" -source 17 -target 17 -Xlint:all -classpath "$CLASSPATH" -d "$CLASSES" "${SOURCES[@]}"
-
-sh "$ROOT/verify-io-api.sh" "$CLASSES"
-
-CLASSES_ARGS=()
-while IFS= read -r -d '' class_file; do CLASSES_ARGS+=("$class_file"); done < <(find "$CLASSES" -name '*.class' -print0)
-"$BUILD_TOOLS/d8" --lib "$ANDROID_JAR" --min-api 29 --output "$DEX" "${CLASSES_ARGS[@]}" "${SHIZUKU_JARS[@]}"
+# 资源与 R.java 必须先于 javac 生成：MainActivity 通过 R.color/R.drawable 引用主题资源。
+# --custom-package 保证 R 始终生成在与共享源码一致的包内（standalone 清单是不同的应用包名）；
+# R 常量在编译期内联为资源 ID，运行时与本链接步骤产出的资源表严格一致。
 COMPILED_RES="$OUT/compiled-res.zip"
 "$BUILD_TOOLS/aapt2" compile --dir "$ROOT/res" -o "$COMPILED_RES"
 MANIFEST="$OUT/AndroidManifest.xml"
@@ -92,8 +85,24 @@ if [ "$BUILD_VARIANT" = release ]; then
 else
   cp "$MANIFEST_SOURCE" "$MANIFEST"
 fi
+GEN="$OUT/gen"
+mkdir -p "$GEN"
 "$BUILD_TOOLS/aapt2" link -o "$OUT/unsigned.apk" -I "$ANDROID_JAR" \
-  --manifest "$MANIFEST" "$COMPILED_RES"
+  --manifest "$MANIFEST" --custom-package com.airsim.phonecontrol \
+  --java "$GEN" "$COMPILED_RES"
+
+SOURCES=()
+while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/src" -name '*.java' -print0)
+while IFS= read -r -d '' source; do SOURCES+=("$source"); done < <(find "$ROOT/../phone-audio-bridge/src" -name '*.java' -print0)
+R_SOURCES=()
+while IFS= read -r -d '' r_source; do R_SOURCES+=("$r_source"); done < <(find "$GEN" -name 'R.java' -print0)
+"$JAVA_HOME/bin/javac" -source 17 -target 17 -Xlint:all -classpath "$CLASSPATH" -d "$CLASSES" "${SOURCES[@]}" "${R_SOURCES[@]}"
+
+sh "$ROOT/verify-io-api.sh" "$CLASSES"
+
+CLASSES_ARGS=()
+while IFS= read -r -d '' class_file; do CLASSES_ARGS+=("$class_file"); done < <(find "$CLASSES" -name '*.class' -print0)
+"$BUILD_TOOLS/d8" --lib "$ANDROID_JAR" --min-api 29 --output "$DEX" "${CLASSES_ARGS[@]}" "${SHIZUKU_JARS[@]}"
 (cd "$DEX" && zip -q -j "$OUT/unsigned.apk" classes.dex)
 "$BUILD_TOOLS/zipalign" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 

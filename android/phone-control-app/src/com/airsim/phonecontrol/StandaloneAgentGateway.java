@@ -7,7 +7,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +36,9 @@ final class StandaloneAgentGateway {
     private final Object commandsLock = new Object();
     private final StandaloneLongPoll callEvents = new StandaloneLongPoll();
     private final StandaloneLongPoll agentEvents = new StandaloneLongPoll();
+    private final StandaloneLongPoll clusterEvents = new StandaloneLongPoll();
+    private static final int MAX_CLUSTER_EVENTS = 50;
+    private final List<JSONObject> clusterEventsList = new ArrayList<>();
     private final Map<String, String> commandResults = new LinkedHashMap<>();
     private JSONObject activeCall;
     private final JSONArray callHistory = new JSONArray();
@@ -42,11 +47,17 @@ final class StandaloneAgentGateway {
         this.context = context.getApplicationContext();
         store = new StandaloneAgentStore(context);
         smsStore = new StandaloneSMSStore(context);
+        SIMSlotManager.registerChangeListener(this.context, () -> {
+            agentEvents.advance();
+            clusterEvents.advance();
+        });
     }
 
     String health() throws Exception {
         return new JSONObject().put("ok", true).put("product", "airsim")
                 .put("version", "standalone-0.1.0").put("runtime_profile", "android-standalone")
+                .put("slots", SIMSlotManager.getSlotsJSON(context))
+                .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
                 .toString();
     }
 
@@ -54,7 +65,10 @@ final class StandaloneAgentGateway {
         return new JSONObject().put("ok", true).put("configured", store.configured())
                 .put("runtime_profile", "android-standalone").put("pending_commands", 0)
                 .put("last_seen", store.lastSeen() == 0 ? "" : Instant.ofEpochMilli(store.lastSeen()).toString())
-                .put("transport", "in_process").toString();
+                .put("transport", "in_process")
+                .put("slots", SIMSlotManager.getSlotsJSON(context))
+                .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
+                .toString();
     }
 
     String pushStatus() throws Exception { return store.pushStatus().toString(); }
@@ -87,12 +101,14 @@ final class StandaloneAgentGateway {
         }
         agentEvents.advance();
         callEvents.advance();
+        clusterEvents.advance();
         BridgeLog.info("standalone_pairing_cleared");
     }
 
     void sendCallEvent(String json) throws Exception {
         JSONObject event = new JSONObject(json);
         applyCallEvent(event);
+        clusterEvents.advance();
         if (store.configured() && store.cloudEnabled()) {
             StandaloneAgentService.enqueueCallEvent(context, event.toString());
         }
@@ -102,6 +118,13 @@ final class StandaloneAgentGateway {
         JSONObject event = new JSONObject(json);
         if (smsStore.add(event, store.configured() && store.cloudEnabled())) {
             agentEvents.advance();
+            JSONObject smsCluster = new JSONObject()
+                    .put("type", "sms_received")
+                    .put("sender", event.optString("sender", event.optString("address", "")))
+                    .put("content", event.optString("content", event.optString("body", "")))
+                    .put("code", event.optString("code", ""))
+                    .put("slot_index", event.optInt("slot_id", 0));
+            publishClusterEvent(smsCluster);
             if (store.configured() && store.cloudEnabled()) StandaloneAgentService.start(context);
         }
     }
@@ -115,9 +138,13 @@ final class StandaloneAgentGateway {
                 case "/api/android/status" -> ok(status());
                 case "/api/push/status" -> ok(pushStatus());
                 case "/api/debug" -> ok(debugSnapshot());
+                case "/api/android/sims" -> ok(SIMSlotManager.getSlotsJSON(context).toString());
                 case "/api/calls/status" -> ok(callSnapshot().toString());
                 case "/api/calls/events" -> waitForCallEvent(pathAndQuery);
                 case "/api/events" -> waitForAgentEvent(pathAndQuery);
+                case "/api/v2/sims" -> ok(v2Sims().toString());
+                case "/api/v2/sms" -> ok(v2Sms().toString());
+                case "/api/v2/cluster/events" -> waitForClusterEvents(pathAndQuery);
                 case "/api/sms" -> ok(smsStore.localMessages().toString());
                 case "/api/sms/status" -> ok(new JSONObject().put("auto_cleanup_me", true)
                         .put("count", smsStore.pendingCount()).put("last_poll_error", "").toString());
@@ -134,13 +161,53 @@ final class StandaloneAgentGateway {
             case "/api/push/register" -> ok(registerPairing(input.toString()));
             case "/api/push/mode" -> ok(store.setCloudEnabled(
                     input.optBoolean("enabled", false)).toString());
-            case "/api/calls/dial" -> command("dial", "", input.optString("number", ""), "");
+            case "/api/calls/dial" -> {
+                String slotStr = input.optString("slot", "");
+                int slotId = input.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
+                int subId = input.optInt("sub_id", -1);
+                yield command("dial", "", input.optString("number", ""), "", slotId, subId, slotStr);
+            }
             case "/api/calls/answer" -> command("answer", localCallTarget("answer", input), "", "");
             case "/api/calls/reject" -> command("reject", localCallTarget("reject", input), "", "");
             case "/api/calls/hangup" -> command("end", localCallTarget("end", input), "", "");
             case "/api/calls/dtmf" -> command("dtmf", CallRepository.idForAction("dtmf"), input.optString("digit", ""), "");
-            case "/api/sms/send" -> command("send_sms", "", input.optString("phone", ""),
-                    input.optString("message", ""));
+            case "/api/sms/send" -> {
+                String slotStr = input.optString("slot", "");
+                int slotId = input.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
+                int subId = input.optInt("sub_id", -1);
+                yield command("send_sms", "", input.optString("phone", ""),
+                        input.optString("message", ""), slotId, subId, slotStr);
+            }
+            case "/api/v2/calls/dial" -> {
+                int slotIndex = input.optInt("slot_index", input.optInt("slot_id", -1));
+                String slotStr = slotIndex >= 0 ? "slot" + slotIndex : input.optString("slot", "");
+                int subId = input.optInt("sub_id", -1);
+                yield command("dial", "", input.optString("number", ""), "", slotIndex, subId, slotStr);
+            }
+            case "/api/v2/ring_group/answer" -> {
+                String callUuid = input.optString("callUUID", input.optString("call_uuid", ""));
+                String clientDeviceID = input.optString("clientDeviceID", input.optString("client_device_id", "macos"));
+                command("answer", localCallTarget("answer", input), "", "");
+                JSONObject answerResp = new JSONObject()
+                        .put("callUUID", callUuid)
+                        .put("call_uuid", callUuid)
+                        .put("accepted", true)
+                        .put("winnerDeviceID", clientDeviceID)
+                        .put("winner_device_id", clientDeviceID)
+                        .put("audioPort", VoWLANGatewayService.activePcmPort())
+                        .put("audio_port", VoWLANGatewayService.activePcmPort())
+                        .put("codec", "pcm");
+                yield ok(answerResp.toString());
+            }
+            case "/api/v2/calls/hangup" -> command("end", localCallTarget("end", input), "", "");
+            case "/api/v2/calls/reject" -> command("reject", localCallTarget("reject", input), "", "");
+            case "/api/v2/sms/send" -> {
+                int slotIndex = input.optInt("slot_index", input.optInt("slot_id", -1));
+                String slotStr = slotIndex >= 0 ? "slot" + slotIndex : input.optString("slot", "");
+                int subId = input.optInt("sub_id", -1);
+                yield command("send_sms", "", input.optString("phone", ""),
+                        input.optString("message", ""), slotIndex, subId, slotStr);
+            }
             case "/api/calls/audio/host/warmup" -> ok("{\"warming\":true}");
             case "/api/calls/audio/host/register" -> ok(new JSONObject()
                     .put("enabled", input.optBoolean("enabled", false)).toString());
@@ -193,8 +260,11 @@ final class StandaloneAgentGateway {
                 ? StandaloneCloudMediaManager.get(context).androidCallIDFor(command.optJSONObject("call"))
                 : "dial".equals(action) || "send_sms".equals(action)
                     ? "" : CallRepository.idForAction(action);
+        String slotStr = command.optString("slot", "");
+        int slotId = command.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
+        int subId = command.optInt("sub_id", -1);
         AgentCommand local = new AgentCommand(commandID, action, callID,
-                command.optString("number", ""), command.optString("message", ""));
+                command.optString("number", ""), command.optString("message", ""), slotId, subId, slotStr);
         AgentCommandDispatcher.Result result = execute(local);
         JSONObject output = new JSONObject().put("command_id", commandID)
                 .put("status", result.success() ? "completed" : "failed");
@@ -225,8 +295,14 @@ final class StandaloneAgentGateway {
 
     private AgentClient.ForwardResponse command(String action, String callID, String number, String message)
             throws Exception {
+        return command(action, callID, number, message, -1, -1, "");
+    }
+
+    private AgentClient.ForwardResponse command(String action, String callID, String number, String message,
+                                                int slotId, int subId, String slot)
+            throws Exception {
         AgentCommandDispatcher.Result result = execute(new AgentCommand(
-                UUID.randomUUID().toString(), action, callID, number, message));
+                UUID.randomUUID().toString(), action, callID, number, message, slotId, subId, slot));
         if (!result.success()) return error(502, result.error());
         JSONObject value = new JSONObject();
         switch (action) {
@@ -242,7 +318,9 @@ final class StandaloneAgentGateway {
 
     private String localCallTarget(String action, JSONObject input) {
         synchronized (callsLock) {
-            return CallRepository.idForPublishedAction(action, input.optString("call_id"),
+            String targetId = input.optString("call_id",
+                    input.optString("call_uuid", input.optString("callUUID", "")));
+            return CallRepository.idForPublishedAction(action, targetId,
                     activeCall == null ? "" : activeCall.optString("id"),
                     activeCall == null ? "" : activeCall.optString("android_id"));
         }
@@ -260,11 +338,46 @@ final class StandaloneAgentGateway {
                 value -> SMSCommandExecutor.execute(context, value));
     }
 
+    private void publishClusterEvent(JSONObject event) {
+        synchronized (clusterEventsList) {
+            long rev = clusterEvents.advance();
+            try {
+                event.put("revision", rev);
+            } catch (Exception ignored) {}
+            clusterEventsList.add(event);
+            while (clusterEventsList.size() > MAX_CLUSTER_EVENTS) {
+                clusterEventsList.remove(0);
+            }
+        }
+    }
+
+    private JSONArray getClusterEventsAfter(long after) {
+        JSONArray array = new JSONArray();
+        synchronized (clusterEventsList) {
+            for (JSONObject ev : clusterEventsList) {
+                if (ev.optLong("revision", 0L) > after) {
+                    array.put(ev);
+                }
+            }
+        }
+        return array;
+    }
+
     private void applyCallEvent(JSONObject event) throws Exception {
+        String callUuid = "";
+        String number = "未知号码";
+        int slotId = 0;
+        String state = event.optString("state", "");
+        String prevState = "";
+        boolean isEnded = "ended".equals(state);
+        boolean isRinging = "incoming".equals(state) || "alerting".equals(state) || "ringing".equals(state);
+        boolean wasRinging = false;
+
         synchronized (callsLock) {
-            String state = event.optString("state", "");
-            if ("ended".equals(state)) {
+            if (isEnded) {
                 if (activeCall != null) {
+                    callUuid = activeCall.optString("id", activeCall.optString("android_id", ""));
+                    prevState = activeCall.optString("state", "");
                     activeCall.put("state", "ended").put("ended_at", Instant.now().toString())
                             .put("updated_at", Instant.now().toString());
                     callHistory.put(activeCall);
@@ -275,12 +388,45 @@ final class StandaloneAgentGateway {
                     activeCall = new JSONObject().put("id", "android-" + System.currentTimeMillis())
                             .put("android_id", event.optString("call_id")).put("index", 1)
                             .put("started_at", Instant.now().toString()).put("missed", false);
+                } else {
+                    prevState = activeCall.optString("state", "");
                 }
                 activeCall.put("direction", event.optString("direction"))
                         .put("state", state).put("number", event.optString("number"))
                         .put("updated_at", Instant.now().toString());
+                if (event.has("slot_id")) activeCall.put("slot_id", event.optInt("slot_id"));
+                if (event.has("sub_id")) activeCall.put("sub_id", event.optInt("sub_id"));
+                if (event.has("carrier")) activeCall.put("carrier", event.optString("carrier"));
+                if (event.has("target_number")) activeCall.put("target_number", event.optString("target_number"));
+
+                callUuid = activeCall.optString("id", activeCall.optString("android_id", ""));
+                number = activeCall.optString("number", "未知号码");
+                slotId = activeCall.optInt("slot_id", 0);
+                wasRinging = "incoming".equals(prevState) || "alerting".equals(prevState) || "ringing".equals(prevState);
             }
         }
+
+        if (isEnded && !callUuid.isEmpty()) {
+            JSONObject dismiss = new JSONObject()
+                    .put("type", "ring_group_dismiss")
+                    .put("call_uuid", callUuid)
+                    .put("reason", "ended");
+            publishClusterEvent(dismiss);
+        } else if (isRinging && !callUuid.isEmpty()) {
+            JSONObject broadcast = new JSONObject()
+                    .put("type", "ring_group_broadcast")
+                    .put("call_uuid", callUuid)
+                    .put("caller_number", number)
+                    .put("slot_index", slotId);
+            publishClusterEvent(broadcast);
+        } else if ("active".equals(state) && wasRinging && !callUuid.isEmpty()) {
+            JSONObject dismiss = new JSONObject()
+                    .put("type", "ring_group_dismiss")
+                    .put("call_uuid", callUuid)
+                    .put("reason", "answered_elsewhere");
+            publishClusterEvent(dismiss);
+        }
+
         callEvents.advance();
         agentEvents.advance();
     }
@@ -305,7 +451,141 @@ final class StandaloneAgentGateway {
         agentEvents.awaitChange(request.after(), request.timeoutMillis());
         return ok(new JSONObject().put("revision", agentEvents.revision())
                 .put("sms_revision", smsStore.revision()).put("sms_pending", smsStore.pendingCount())
-                .put("call", callSnapshot()).toString());
+                .put("call", callSnapshot())
+                .put("slots", SIMSlotManager.getSlotsJSON(context))
+                .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
+                .toString());
+    }
+
+    private AgentClient.ForwardResponse waitForClusterEvents(String pathAndQuery) throws Exception {
+        StandaloneLongPoll.Request request = StandaloneLongPoll.parse(pathAndQuery, 15_000);
+        long after = request.after();
+
+        // 1. Check for events after cursor
+        JSONArray pending = getClusterEventsAfter(after);
+        if (pending.length() > 0) {
+            return ok(pending.toString());
+        }
+
+        // 2. If client has cursor 0, check for active call or return initial sync
+        if (after == 0) {
+            synchronized (callsLock) {
+                if (activeCall != null) {
+                    String state = activeCall.optString("state", "");
+                    if ("incoming".equals(state) || "alerting".equals(state) || "ringing".equals(state)) {
+                        JSONObject b = new JSONObject()
+                                .put("type", "ring_group_broadcast")
+                                .put("call_uuid", activeCall.optString("id", activeCall.optString("android_id", "")))
+                                .put("caller_number", activeCall.optString("number", "未知号码"))
+                                .put("slot_index", activeCall.optInt("slot_id", 0));
+                        publishClusterEvent(b);
+                        return ok(getClusterEventsAfter(after).toString());
+                    }
+                }
+            }
+            // Client is fresh (after=0) and there are no active calls or pending events.
+            // Return an initial sync event so client knows the current revision cursor and stops polling after=0.
+            JSONObject sync = new JSONObject()
+                    .put("type", "sync")
+                    .put("revision", clusterEvents.revision());
+            JSONArray syncArray = new JSONArray();
+            syncArray.put(sync);
+            return ok(syncArray.toString());
+        }
+
+        // 3. Client cursor is after > 0. Wait for new events.
+        long deadline = System.currentTimeMillis() + request.timeoutMillis();
+        while (System.currentTimeMillis() < deadline) {
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) break;
+            clusterEvents.awaitChange(after, (int) Math.min(remaining, 15_000L));
+            pending = getClusterEventsAfter(after);
+            if (pending.length() > 0) {
+                return ok(pending.toString());
+            }
+            if (clusterEvents.revision() != after) {
+                // Revision changed but no cluster events were recorded (e.g. internal change)
+                // Return a sync event so client updates cursor and avoids tight loop
+                JSONObject sync = new JSONObject()
+                        .put("type", "sync")
+                        .put("revision", clusterEvents.revision());
+                JSONArray syncArray = new JSONArray();
+                syncArray.put(sync);
+                return ok(syncArray.toString());
+            }
+        }
+        return ok("[]");
+    }
+
+    private JSONArray v2Sims() {
+        JSONArray array = new JSONArray();
+        java.util.List<SIMSlotInfo> slots = SIMSlotManager.getActiveSlots(context);
+        if (slots.isEmpty()) {
+            try {
+                JSONObject fallback = new JSONObject()
+                        .put("slot_index", 0)
+                        .put("slot_id", 0)
+                        .put("carrier_name", "蜂窝网络")
+                        .put("phone_number", AndroidAgentIdentity.phoneNumber(context))
+                        .put("signal_bars", 5)
+                        .put("cellular_state", "registered")
+                        .put("vowifi_active", false)
+                        .put("battery_level", 95)
+                        .put("is_charging", true)
+                        .put("is_default_voice", true)
+                        .put("is_default_data", true);
+                array.put(fallback);
+            } catch (Exception ignored) {}
+        } else {
+            for (SIMSlotInfo slot : slots) {
+                try {
+                    String cName = slot.carrierName();
+                    if (cName == null || cName.isBlank()) cName = slot.displayName();
+                    if (cName == null || cName.isBlank()) cName = "蜂窝卡槽 " + (slot.slotIndex() + 1);
+                    JSONObject obj = new JSONObject()
+                            .put("slot_index", slot.slotIndex())
+                            .put("slot_id", slot.slotIndex())
+                            .put("sub_id", slot.subscriptionId())
+                            .put("carrier_name", cName)
+                            .put("phone_number", slot.number() != null ? slot.number() : "")
+                            .put("signal_bars", 5)
+                            .put("cellular_state", "ready".equalsIgnoreCase(slot.simState()) || "LOADED".equalsIgnoreCase(slot.simState()) ? "registered" : "searching")
+                            .put("vowifi_active", false)
+                            .put("battery_level", 95)
+                            .put("is_charging", true)
+                            .put("is_default_voice", slot.isDefaultVoice())
+                            .put("is_default_data", true)
+                            .put("is_default_sms", slot.isDefaultSms());
+                    array.put(obj);
+                } catch (Exception ignored) {}
+            }
+        }
+        return array;
+    }
+
+    private JSONArray v2Sms() throws Exception {
+        JSONArray original = smsStore.localMessages();
+        JSONArray v2Array = new JSONArray();
+        for (int i = 0; i < original.length(); i++) {
+            JSONObject msg = original.getJSONObject(i);
+            JSONObject item = new JSONObject();
+            item.put("delivery_id", msg.optString("delivery_id"));
+            item.put("sender", msg.optString("sender"));
+            item.put("content", msg.optString("content"));
+            item.put("slot_index", msg.optInt("slot_id", 0));
+            item.put("direction", "incoming");
+            item.put("timestamp", msg.optString("timestamp"));
+            String code = extractVerificationCode(msg.optString("content"));
+            if (code != null) item.put("code", code);
+            v2Array.put(item);
+        }
+        return v2Array;
+    }
+
+    private static String extractVerificationCode(String content) {
+        if (content == null || content.isEmpty()) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?<!\\d)(\\d{4,8})(?!\\d)").matcher(content);
+        return m.find() ? m.group(1) : null;
     }
 
     private static AgentClient.ForwardResponse ok(String body) { return new AgentClient.ForwardResponse(200, body); }

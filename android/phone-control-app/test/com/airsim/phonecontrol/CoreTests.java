@@ -448,8 +448,16 @@ public final class CoreTests {
 		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/push/status"));
 		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/sms"));
 		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/sms/status"));
+		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/v2/sims"));
+		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/v2/sms"));
+		assertTrue(VoWLANControlPolicy.allowed("GET", "/api/v2/cluster/events"));
 		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/sms/send"));
 		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/sms/ack"));
+		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/v2/calls/dial"));
+		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/v2/ring_group/answer"));
+		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/v2/calls/hangup"));
+		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/v2/calls/reject"));
+		assertTrue(VoWLANControlPolicy.allowed("POST", "/api/v2/sms/send"));
 		assertTrue(!VoWLANControlPolicy.allowed("POST", "/api/at"));
 		assertTrue(!VoWLANControlPolicy.allowed("POST", "/api/system/update"));
 		VoWLANReplayCache replayCache = new VoWLANReplayCache(30);
@@ -501,6 +509,10 @@ public final class CoreTests {
 				"/api/events?after=7&timeout_ms=15000", 15_000);
 		assertEquals(7L, eventWait.after());
 		assertEquals(15_000, eventWait.timeoutMillis());
+		StandaloneLongPoll.Request noAfter = StandaloneLongPoll.parse(
+				"/api/v2/cluster/events?timeout_ms=15000", 15_000);
+		assertEquals(0L, noAfter.after());
+		assertEquals(15_000, noAfter.timeoutMillis());
 		assertEquals(25_000, StandaloneLongPoll.parse(
 				"/api/calls/events?after=0", 25_000).timeoutMillis());
 		try {
@@ -1397,6 +1409,14 @@ public final class CoreTests {
 				"/api/calls/answer", 200, false));
 		assertTrue(!VoWLANControlPolicy.ownsCallAfterResponse(
 				"/api/calls/answer", 502, false));
+		assertTrue(VoWLANControlPolicy.ownsCallAfterResponse(
+				"/api/v2/calls/dial", 200, false));
+		assertTrue(VoWLANControlPolicy.ownsCallAfterResponse(
+				"/api/v2/ring_group/answer", 200, false));
+		assertTrue(!VoWLANControlPolicy.ownsCallAfterResponse(
+				"/api/v2/calls/hangup", 200, true));
+		assertTrue(!VoWLANControlPolicy.ownsCallAfterResponse(
+				"/api/v2/calls/reject", 200, true));
 	}
 
 	private static void assertVoWLANClosedSocketStopsAcceptLoop() throws Exception {
