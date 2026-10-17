@@ -39,7 +39,7 @@
         android:allowBackup="false"
         android:debuggable="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="AirSIM Standalone"
+        android:label="AirSIM"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">

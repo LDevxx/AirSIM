@@ -832,7 +832,7 @@ public final class MainActivity extends Activity {
         LinearLayout root = pageRoot();
         String vName = appVersionName();
         if (!vName.startsWith("v") && !vName.startsWith("V")) vName = "v" + vName;
-        root.addView(pageTitle("AirSIM Bridge", vName + " · 运行中"));
+        root.addView(pageTitle("AirSIM", vName + " · 运行中"));
 
         boolean paired = VoWLANPairingStore.configured(this);
         // LD-MOD：hero 区块 = AirChat 连接状态。未配对显示「AirChat 尚未连接」并点击进配对页；
@@ -1379,7 +1379,7 @@ public final class MainActivity extends Activity {
         String runtimeLabel = standaloneRuntime ? "Standalone 内置模式" : "AVF 模式";
         String vName = appVersionName();
         if (!vName.startsWith("v") && !vName.startsWith("V")) vName = "v" + vName;
-        aboutCard.addView(label("AirSIM Bridge · " + vName, 15, TEXT, Gravity.START));
+        aboutCard.addView(label("AirSIM · " + vName, 15, TEXT, Gravity.START));
         aboutCard.addView(description("运行架构：" + runtimeLabel + " · 跨设备通话、短信和 VoWLAN"), matchWithTop(4));
         // 借鉴上游 v0.9.7.2：关于区块提供原项目 Releases 链接，便于对照升级说明。
         TextView releases = secondaryButton("查看原项目 Releases");
