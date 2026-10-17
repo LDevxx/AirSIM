@@ -523,7 +523,7 @@ public final class MainActivity extends Activity {
         PopupMenu menu = new PopupMenu(this, anchor);
         Menu items = menu.getMenu();
         items.add(Menu.NONE, 1, Menu.NONE, "清除调试日志");
-        items.add(Menu.NONE, 2, Menu.NONE, "清除 iPhone 配对凭据");
+        items.add(Menu.NONE, 2, Menu.NONE, "清除 AirChat 配对凭据");
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
                 confirmClearDebugLog();
@@ -553,8 +553,8 @@ public final class MainActivity extends Activity {
 
     private void confirmClearPairing() {
         new AlertDialog.Builder(this)
-                .setTitle("清除 iPhone 配对凭据？")
-                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 iPhone 需要重新配对才能控制通话。")
+                .setTitle("清除 AirChat 配对凭据？")
+                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 AirChat 需要重新配对才能控制通话。")
                 .setPositiveButton("清除凭据", (dialog, which) -> clearPairingCredentials())
                 .setNegativeButton("取消", null)
                 .show();
@@ -939,7 +939,7 @@ public final class MainActivity extends Activity {
     private View callsPage() {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
-        root.addView(description("Telecom 本机控制；iPhone 通话优先使用 VoWLAN/Tailscale，局域网不可用时由云端中继。"), matchWithTop(8));
+        root.addView(description("Telecom 本机控制；AirChat 通话优先使用 VoWLAN/Tailscale，局域网不可用时由云端中继。"), matchWithTop(8));
 
         LinearLayout dialCard = card(SURFACE, 24);
         dialCard.setOrientation(LinearLayout.VERTICAL);
@@ -1179,23 +1179,23 @@ public final class MainActivity extends Activity {
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
 
-        root.addView(sectionTitle("iPhone 配对凭证"), matchWithTop(18));
+        root.addView(sectionTitle("AirChat 配对凭证"), matchWithTop(18));
         LinearLayout pairingCredentialCard = card(SURFACE, 22);
         pairingCredentialCard.setOrientation(LinearLayout.VERTICAL);
         pairingCredentialCard.setPadding(dp(16), dp(16), dp(16), dp(16));
         boolean hasPairing = hasStoredPairingCredentials();
-        pairingCredentialCard.addView(label(hasPairing ? "已保存 iPhone 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
+        pairingCredentialCard.addView(label(hasPairing ? "已保存 AirChat 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
                 14, hasPairing ? PRIMARY : MUTED, Gravity.START));
-        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；iPhone 需要重新配对才能呼叫。"),
+        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；AirChat 需要重新配对才能呼叫。"),
                 matchWithTop(6));
         // LD-MOD：清除凭据 = 红底白字实心按钮。
-        TextView clearPairingBtn = dangerButton("清除 iPhone 配对凭据");
+        TextView clearPairingBtn = dangerButton("清除 AirChat 配对凭据");
         clearPairingBtn.setEnabled(hasPairing);
         // LD-MOD：清除按钮统一纯红底；禁用仅拦截点击，不做半透明淡化。
         clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
         pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
         // LD-MOD：新增重新配对入口（原状态页「配对 iPhone」按钮迁移至此）。
-        TextView rePairBtn = primaryButton("重新配对 iPhone", BLUE);
+        TextView rePairBtn = primaryButton("重新配对 AirChat", BLUE);
         rePairBtn.setOnClickListener(ignored -> openPairingPage());
         pairingCredentialCard.addView(rePairBtn, matchWithTop(10));
         root.addView(pairingCredentialCard, matchWithTop(10));
@@ -1206,7 +1206,7 @@ public final class MainActivity extends Activity {
         voBLECard.setPadding(dp(16), dp(16), dp(16), dp(16));
         boolean voBLEPaired = com.airsim.phonecontrol.voble.VoBLEGatewayService
                 .hasStoredCredential(this);
-        voBLECard.addView(label(voBLEPaired ? "已保存 iPhone 认证凭据" : "尚未保存认证凭据",
+        voBLECard.addView(label(voBLEPaired ? "已保存 AirChat 认证凭据" : "尚未保存认证凭据",
                 14, voBLEPaired ? PRIMARY : MUTED, Gravity.START));
         voBLECard.addView(description("管理六位安全码认证、旧凭据恢复与双端取消配对。"),
                 matchWithTop(6));
@@ -1555,7 +1555,7 @@ public final class MainActivity extends Activity {
         voBLEAuthenticationVisible = false;
         handler.removeCallbacks(voBLEAuthenticationRefresh);
         bottomBar.setVisibility(View.GONE);
-        presentSubPage("iPhone 配对");
+        presentSubPage("AirChat 配对");
         contentHost.removeAllViews();
         contentHost.addView(pairingPage(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1623,12 +1623,12 @@ public final class MainActivity extends Activity {
         flowCard.setOrientation(LinearLayout.VERTICAL);
         flowCard.setPadding(dp(16), dp(16), dp(16), dp(16));
         flowCard.addView(overline("认证流程"));
-        flowCard.addView(label("1. iPhone 扫描并连接此 Android Agent\n"
+        flowCard.addView(label("1. AirChat 扫描并连接此 Android Agent\n"
                         + "2. 两端核对同一组六位安全码\n"
                         + "3. 确认后保存应用层密钥并开放拨号与 PCM 音频",
                 14, TEXT, Gravity.START), matchWithTop(8));
-        flowCard.addView(description("如果 iPhone 显示 already paired 或认证失败，表示两端旧密钥不一致。"
-                + "请在此页清除旧凭据，再回到 iPhone 重新配对。"), matchWithTop(10));
+        flowCard.addView(description("如果 AirChat 显示 already paired 或认证失败，表示两端旧密钥不一致。"
+                + "请在此页清除旧凭据，再回到 AirChat 重新配对。"), matchWithTop(10));
         root.addView(flowCard, matchWithTop(12));
 
         TextView restart = secondaryButton("重启 VoBLE 服务");
@@ -1959,7 +1959,7 @@ public final class MainActivity extends Activity {
             case START -> {
                 title = "Shizuku 尚未运行";
                 message = "已安装 Shizuku，但服务尚未启动。请打开 Shizuku，使用无线调试或 Root 启动服务，再返回 AirSIM。"
-                        + "\n\n未就绪时，通话音频无法转送到 iPhone。";
+                        + "\n\n未就绪时，通话音频无法转送到 AirChat。";
                 action = "打开 Shizuku";
             }
             case AUTHORIZE -> {
@@ -2307,7 +2307,7 @@ public final class MainActivity extends Activity {
                 boolean paired = VoWLANPairingStore.configured(this);
                 String address = localVoWLANAddress();
                 String pcmBackend = RuntimeMode.isStandalone(this) ? "本机 PCM 端口 7580" : "AVF PCM 端口 7580";
-                String reason = !paired ? "尚未与 iPhone 配对"
+                String reason = !paired ? "尚未与 AirChat 配对"
                         : address.isEmpty() ? "没有可用的同网 Wi-Fi 或热点地址"
                         : currentVoWLAN.contains("avf=missing") ? "AVF 虚拟网卡未出现"
                         : currentVoWLAN.contains("agent_ready=false") ? "Agent 未通过 VoWLAN 就绪检查"
