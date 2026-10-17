@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
 	package="com.airsim.phonecontrol"
 	android:versionCode="91"
-	android:versionName="0.9.7.2_LD-MOD">
+	android:versionName="V0.9.7.2 LDev 911">
 	<queries>
 		<package android:name="moe.shizuku.privileged.api" />
 		<package android:name="com.android.virtualization.terminal" />

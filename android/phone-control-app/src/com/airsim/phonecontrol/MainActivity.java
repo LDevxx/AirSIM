@@ -1398,7 +1398,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "0.9.7.2_LD-MOD";
+            return "V0.9.7.2 LDev 911";
         }
     }
 
