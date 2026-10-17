@@ -47,9 +47,14 @@ final class StandaloneAgentGateway {
         this.context = context.getApplicationContext();
         store = new StandaloneAgentStore(context);
         smsStore = new StandaloneSMSStore(context);
+        // 集群事件游标从 1 开始：保证 sync 事件永远返回 ≥1 的修订号，
+        // 避免客户端以 after=0 重复请求造成紧密轮询死循环。
+        clusterEvents.advance();
         SIMSlotManager.registerChangeListener(this.context, () -> {
             agentEvents.advance();
-            clusterEvents.advance();
+            try {
+                publishClusterEvent(new JSONObject().put("type", "sim_status_changed"));
+            } catch (Exception ignored) {}
         });
     }
 
