@@ -2,47 +2,48 @@
 <resources>
     <color name="launcher_icon_background">#FFFFFF</color>
 
-    <!-- AirSIM 深色主题：原先硬编码在 MainActivity 的色值统一收敛到此处，一处修改全局生效。 -->
-    <color name="airsim_bg">#081420</color>
-    <color name="airsim_surface">#111C27</color>
-    <color name="airsim_surface_high">#172431</color>
-    <color name="airsim_border">#2A3A49</color>
-    <color name="airsim_cyan">#49E7E0</color>
-    <color name="airsim_blue">#2F80ED</color>
-    <color name="airsim_text">#F4F7FA</color>
-    <color name="airsim_muted">#A6B3C1</color>
-    <color name="airsim_warning">#FFB84D</color>
-    <color name="airsim_danger">#FF6363</color>
+    <!-- ============ 暗黑灰主题（墨金）：#0F0F0F 底 + #2A2A2A 卡片 + #C2A878 金强调 ============ -->
+    <color name="airsim_bg">#0F0F0F</color>
+    <color name="airsim_surface">#1A1A1A</color>
+    <color name="airsim_surface_high">#2A2A2A</color>
+    <color name="airsim_border">#3A3A3A</color>
+    <color name="airsim_cyan">#C2A878</color>
+    <color name="airsim_blue">#C2A878</color>
+    <color name="airsim_text">#FAF7F2</color>
+    <color name="airsim_muted">#A8A29A</color>
+    <color name="airsim_warning">#E0A458</color>
+    <color name="airsim_danger">#E05252</color>
 
-    <!-- Material 3 风格底部导航扩展色：涟漪、应用栏底色；选中胶囊按强调色实时派生。 -->
-    <color name="airsim_nav_ripple">#33A6B3C1</color>
-    <color name="airsim_app_bar_surface">#0D1826</color>
+    <!-- Material 3 风格底部导航扩展色。 -->
+    <color name="airsim_nav_ripple">#33A8A29A</color>
+    <color name="airsim_app_bar_surface">#141414</color>
 
-    <!-- 顶部可选主题强调色（palette 按钮切换，写入 theme_accent 偏好）。 -->
-    <color name="airsim_theme_green">#34E5AA</color>
-    <color name="airsim_theme_cyan">#49E7E0</color>
-    <color name="airsim_theme_blue">#4C8DFF</color>
-    <color name="airsim_theme_violet">#8F7BF6</color>
-    <color name="airsim_theme_amber">#FFA726</color>
-    <color name="airsim_theme_pink">#FF7BA9</color>
+    <!-- 主题强调色（暗色板）：LD-MOD 固定 #C2A878 金。 -->
+    <color name="airsim_theme_green">#00C48C</color>
+    <color name="airsim_theme_cyan">#C2A878</color>
+    <color name="airsim_theme_blue">#C2A878</color>
+    <color name="airsim_theme_violet">#C2A878</color>
+    <color name="airsim_theme_amber">#C2A878</color>
+    <color name="airsim_theme_pink">#C2A878</color>
 
-    <!-- 亮白蓝主题（LD-MOD）：与 Android 客户端亮白蓝风格对齐；由 theme_mode 偏好切换。 -->
-    <color name="airsim_bg_light">#F2F4F8</color>
+    <!-- ============ 亮白蓝主题（晴空）：#F7F9FC 底 + #E3EAF5 卡片 + #2563EB 蓝强调 ============ -->
+    <color name="airsim_bg_light">#F7F9FC</color>
     <color name="airsim_surface_light">#FFFFFF</color>
-    <color name="airsim_surface_high_light">#EDF0F5</color>
-    <color name="airsim_border_light">#D8DEE8</color>
-    <color name="airsim_cyan_light">#0A84FF</color>
+    <color name="airsim_surface_high_light">#E3EAF5</color>
+    <color name="airsim_border_light">#D3DCE9</color>
+    <color name="airsim_cyan_light">#2563EB</color>
     <color name="airsim_blue_light">#2563EB</color>
-    <color name="airsim_text_light">#16202B</color>
-    <color name="airsim_muted_light">#67707E</color>
-    <color name="airsim_warning_light">#B25F00</color>
-    <color name="airsim_danger_light">#D70015</color>
-    <color name="airsim_nav_ripple_light">#3367707E</color>
+    <color name="airsim_text_light">#0B1B3F</color>
+    <color name="airsim_muted_light">#66738A</color>
+    <color name="airsim_warning_light">#B0680A</color>
+    <color name="airsim_danger_light">#D3161F</color>
+    <color name="airsim_nav_ripple_light">#3366738A</color>
     <color name="airsim_app_bar_surface_light">#FFFFFF</color>
-    <color name="airsim_theme_green_light">#0FA97E</color>
-    <color name="airsim_theme_cyan_light">#0AA9A2</color>
+    <!-- 主题强调色（亮色板）：LD-MOD 固定 #2563EB 蓝。 -->
+    <color name="airsim_theme_green_light">#00C48C</color>
+    <color name="airsim_theme_cyan_light">#2563EB</color>
     <color name="airsim_theme_blue_light">#2563EB</color>
-    <color name="airsim_theme_violet_light">#6D5AE0</color>
-    <color name="airsim_theme_amber_light">#D97C00</color>
-    <color name="airsim_theme_pink_light">#E0517E</color>
+    <color name="airsim_theme_violet_light">#2563EB</color>
+    <color name="airsim_theme_amber_light">#2563EB</color>
+    <color name="airsim_theme_pink_light">#2563EB</color>
 </resources>

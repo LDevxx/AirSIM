@@ -89,6 +89,9 @@ public final class MainActivity extends Activity {
     private int navActiveContainer;
     private int navRipple;
     private int appBarSurface;
+    // 强调色 / 警示色的半透明容器底色（图标圆底、徽章、分段选择器用），随明暗主题派生。
+    private int tintContainer;
+    private int warnContainer;
 
     private void loadThemeColors() {
         android.content.res.Resources res = getResources();
@@ -110,6 +113,11 @@ public final class MainActivity extends Activity {
                 Color.red(PRIMARY), Color.green(PRIMARY), Color.blue(PRIMARY));
         navRipple = res.getColor(light ? R.color.airsim_nav_ripple_light : R.color.airsim_nav_ripple, getTheme());
         appBarSurface = res.getColor(light ? R.color.airsim_app_bar_surface_light : R.color.airsim_app_bar_surface, getTheme());
+        // 容器色：强调色/警示色的 16-18% 透明底，暗色更亮一档保证可读。
+        tintContainer = Color.argb(light ? 0x2E : 0x30,
+                Color.red(PRIMARY), Color.green(PRIMARY), Color.blue(PRIMARY));
+        warnContainer = Color.argb(light ? 0x2E : 0x30,
+                Color.red(WARNING), Color.green(WARNING), Color.blue(WARNING));
         agentRefreshColor = MUTED;
     }
 
@@ -835,7 +843,7 @@ public final class MainActivity extends Activity {
         hero.setGravity(Gravity.CENTER_VERTICAL);
         hero.setPadding(dp(18), dp(20), dp(18), dp(20));
         ImageView wifi = icon(android.R.drawable.ic_menu_share, ready ? CYAN : WARNING, 54);
-        wifi.setBackground(rounded(ready ? Color.rgb(20, 80, 73) : Color.rgb(76, 58, 25), 28, Color.TRANSPARENT, 0));
+        wifi.setBackground(rounded(ready ? tintContainer : warnContainer, 28, Color.TRANSPARENT, 0));
         wifi.setPadding(dp(14), dp(14), dp(14), dp(14));
         hero.addView(wifi, new LinearLayout.LayoutParams(dp(58), dp(58)));
         LinearLayout heroCopy = column(dp(14));
@@ -1074,7 +1082,7 @@ public final class MainActivity extends Activity {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
 		if (CrashReportStore.hasReport(getFilesDir())) {
-			LinearLayout crashCard = card(Color.rgb(57, 31, 36), 22);
+			LinearLayout crashCard = card(Color.argb(38, 255, 92, 92), 22);
 			crashCard.setOrientation(LinearLayout.VERTICAL);
 			crashCard.setPadding(dp(16), dp(15), dp(16), dp(15));
 			TextView title = label("检测到上次闪退", 16, DANGER, Gravity.START);
@@ -1714,11 +1722,11 @@ public final class MainActivity extends Activity {
                 MainScreenPresentation.formatPairingCode(pairingCode), 42, TEXT, Gravity.CENTER);
         pairingCodeView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         pairingCodeView.setLetterSpacing(0.05f);
-        pairingCodeView.setBackground(rounded(Color.rgb(20, 32, 45), 18, BORDER, 1));
+        pairingCodeView.setBackground(rounded(SURFACE_HIGH, 18, BORDER, 1));
         pairingCodeView.setPadding(dp(18), dp(18), dp(18), dp(18));
         pairingCard.addView(pairingCodeView, matchWithTop(12));
 
-        pairingCountdownView = label("正在生成安全密钥…", 14, Color.rgb(135, 183, 238), Gravity.CENTER);
+        pairingCountdownView = label("正在生成安全密钥…", 14, PRIMARY, Gravity.CENTER);
         pairingCard.addView(pairingCountdownView, matchWithTop(14));
 
         ImageView link = icon(android.R.drawable.ic_menu_share, CYAN, 80);
@@ -1789,7 +1797,7 @@ public final class MainActivity extends Activity {
         TextView item = label(title, 14, selected ? PRIMARY : MUTED, Gravity.CENTER);
         item.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
         item.setPadding(dp(8), dp(12), dp(8), dp(12));
-        item.setBackground(rounded(selected ? Color.rgb(19, 70, 61) : Color.TRANSPARENT,
+        item.setBackground(rounded(selected ? tintContainer : Color.TRANSPARENT,
                 20, selected ? PRIMARY : Color.TRANSPARENT, 1));
         item.setOnClickListener(ignored -> {
             selectedMode = mode;
@@ -1816,7 +1824,7 @@ public final class MainActivity extends Activity {
         tile.setGravity(Gravity.CENTER_VERTICAL);
         tile.setPadding(dp(12), dp(15), dp(12), dp(15));
         ImageView icon = icon(iconResource, healthy ? PRIMARY : WARNING, 42);
-        icon.setBackground(rounded(healthy ? Color.rgb(17, 66, 57) : Color.rgb(76, 58, 25), 21,
+        icon.setBackground(rounded(healthy ? tintContainer : warnContainer, 21,
                 Color.TRANSPARENT, 0));
         icon.setPadding(dp(10), dp(10), dp(10), dp(10));
         tile.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -1841,7 +1849,7 @@ public final class MainActivity extends Activity {
         tile.state.setText(running ? "运行中" : "待启动");
         tile.state.setTextColor(color);
         tile.icon.setImageTintList(ColorStateList.valueOf(color));
-        tile.icon.setBackground(rounded(running ? Color.rgb(17, 66, 57) : Color.rgb(76, 58, 25),
+        tile.icon.setBackground(rounded(running ? tintContainer : warnContainer,
                 21, Color.TRANSPARENT, 0));
     }
 
@@ -1854,7 +1862,7 @@ public final class MainActivity extends Activity {
             TextView chip = label(badge, 13, PRIMARY, Gravity.CENTER);
             chip.setTypeface(Typeface.DEFAULT_BOLD);
             chip.setPadding(dp(12), dp(5), dp(12), dp(5));
-            chip.setBackground(rounded(Color.rgb(15, 66, 56), 16, Color.TRANSPARENT, 0));
+            chip.setBackground(rounded(tintContainer, 16, Color.TRANSPARENT, 0));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             params.topMargin = dp(6);
