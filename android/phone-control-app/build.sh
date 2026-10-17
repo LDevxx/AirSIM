@@ -71,6 +71,7 @@ for artifact in api aidl shared provider; do
   SHIZUKU_JARS+=("$jar_path")
 done
 SHIZUKU_JARS+=("$DEPS/androidx-annotation.jar")
+SHIZUKU_JARS+=("$(sh "$ROOT/crypto-dependency.sh")")
 CLASSPATH="$ANDROID_JAR:$(IFS=:; echo "${SHIZUKU_JARS[*]}")"
 
 # 资源与 R.java 必须先于 javac 生成：MainActivity 通过 R.color/R.drawable 引用主题资源。
@@ -103,7 +104,8 @@ sh "$ROOT/verify-io-api.sh" "$CLASSES"
 CLASSES_ARGS=()
 while IFS= read -r -d '' class_file; do CLASSES_ARGS+=("$class_file"); done < <(find "$CLASSES" -name '*.class' -print0)
 "$BUILD_TOOLS/d8" --lib "$ANDROID_JAR" --min-api 29 --output "$DEX" "${CLASSES_ARGS[@]}" "${SHIZUKU_JARS[@]}"
-(cd "$DEX" && zip -q -j "$OUT/unsigned.apk" classes.dex)
+# 上游 v0.9.7.2：代码量已超单 DEX，打包所有 classes*.dex。
+(cd "$DEX" && zip -q -j "$OUT/unsigned.apk" classes*.dex)
 "$BUILD_TOOLS/zipalign" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 
 if [ "$BUILD_VARIANT" = debug ]; then

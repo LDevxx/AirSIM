@@ -64,6 +64,8 @@ public final class MainActivity extends Activity {
     private static final int OPTIONAL_SMS_REQUEST = 103;
     private static final int CALL_ACCOUNT_PERMISSION_REQUEST = 104;
     private static final int SHIZUKU_SETUP_REQUEST = 105;
+    private static final int DIAGNOSTIC_TXT_REQUEST = 106;
+    private static final java.util.concurrent.ExecutorService DIAGNOSTIC_WORKER = Executors.newSingleThreadExecutor();
     private static final String SHIZUKU_STARTUP_CHECKED = "shizuku_startup_checked";
     private static final String OPTIONAL_SMS_PROMPTED = "optional_sms_prompted";
     private static final String THEME_ACCENT_KEY = "theme_accent";
@@ -612,8 +614,10 @@ public final class MainActivity extends Activity {
                     String host = address.getHostAddress();
                     if (host == null || host.startsWith("127.")) continue;
 
-                    boolean isTailscale = VoWLANNetworkPolicy.isTailscaleIPv4(host)
-                            || ifName.startsWith("tun") || ifName.startsWith("tailscale") || ifName.startsWith("wg");
+                    // 上游 v0.9.7.2：Tailscale 判定统一走 isOverlayIPv4（含 tun/tailscale 接口）。
+                    boolean isTailscale = VoWLANNetworkPolicy.isOverlayIPv4(host)
+                            || VoWLANNetworkPolicy.isOverlayInterface(ifName, host)
+                            || ifName.startsWith("wg");
                     boolean isHotspot = VoWLANNetworkPolicy.isHotspotInterface(ifName, host);
                     boolean isWiFi = ifName.startsWith("wlan");
                     boolean isPrivate = VoWLANNetworkPolicy.isPrivateIPv4(host);
@@ -1128,6 +1132,19 @@ public final class MainActivity extends Activity {
         actions.addView(export, weightedWithStart(5));
         root.addView(actions, matchWithTop(12));
 
+        TextView watchdogExport = secondaryButton("保存音频 Watchdog TXT");
+        watchdogExport.setOnClickListener(ignored -> {
+            Intent document = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            document.addCategory(Intent.CATEGORY_OPENABLE);
+            document.setType("text/plain");
+            document.putExtra(Intent.EXTRA_TITLE, "AirSIM-audio-watchdog-" + System.currentTimeMillis() + ".txt");
+            try { startActivityForResult(document, DIAGNOSTIC_TXT_REQUEST); }
+            catch (RuntimeException error) { toast("无法打开文件保存窗口，请使用复制日志"); }
+        });
+        root.addView(watchdogExport, matchWithTop(8));
+        root.addView(label("远程通话时每 2 秒复检静音状态，受控修复后再次验证。脱敏 VERBOSE 快照自动保存在本机；系统标志不能保证实际扬声器无声。",
+                12, MUTED, Gravity.START), matchWithTop(8));
+
         LinearLayout live = card(SURFACE, 20);
         live.setOrientation(LinearLayout.HORIZONTAL);
         live.setGravity(Gravity.CENTER_VERTICAL);
@@ -1355,6 +1372,8 @@ public final class MainActivity extends Activity {
         aboutCard.addView(releases, matchWithTop(10));
         root.addView(aboutCard, matchWithTop(10));
 
+        // 上游 v0.9.7.2 的“关于”区块（AppInformation 版本与仓库链接）已由 LD-MOD
+        // 版本卡与 Releases 按钮承载，不再重复渲染。
         refreshShizukuStatus();
         return scroll(root);
     }
@@ -1363,7 +1382,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "V0.971-b_LD-MOD";
+            return "0.9.7.2_LD-MOD";
         }
     }
 
@@ -2481,8 +2500,10 @@ public final class MainActivity extends Activity {
                         pairingPortsView.setText("配对端口: " + pairingPort + " · 控制面: " + controlPort + " · PCM音频: " + pcmPort);
                     }
                     if (pairingStatus != null) {
+                        // 地址行可长按选择复制，便于手动 IPv4+端口 配对（上游 v0.9.7.2）。
                         pairingStatus.setText("等待 macOS 2.0 / iOS 客户端连接…\n" + address
                                 + "\n控制端口: " + controlPort + " · PCM音频: " + pcmPort);
+                        pairingStatus.setTextIsSelectable(true);
                     }
                     startPairingCountdown();
                 });
@@ -2899,6 +2920,23 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == DIAGNOSTIC_TXT_REQUEST) {
+            if (result == RESULT_OK && data != null && data.getData() != null) {
+                Uri destination = data.getData();
+                DIAGNOSTIC_WORKER.execute(() -> {
+                    try (java.io.OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+                        if (output == null) throw new java.io.IOException("document unavailable");
+                        String report = AudioWatchdogReport.compose(AppInformation.version(this), Build.VERSION.SDK_INT,
+                                Build.MANUFACTURER, Build.MODEL, BridgeLog.read());
+                        output.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        runOnUiThread(() -> toast("Watchdog TXT 已保存"));
+                    } catch (Exception error) {
+                        runOnUiThread(() -> toast("保存 TXT 失败，请重试或使用复制日志"));
+                    }
+                });
+            }
+            return;
+        }
         refreshStatus();
         if (request == ROLE_REQUEST) {
             continueAfterSystemRoleRequest();

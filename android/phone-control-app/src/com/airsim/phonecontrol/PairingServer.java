@@ -57,7 +57,12 @@ public final class PairingServer implements Closeable {
                 server.setReuseAddress(true);
                 socket = server;
                 session = created;
-                String advertisedName = advertise(server.getLocalPort(), created);
+                // LD-MOD：保留扩展 onStarted（含广播名/配对端口/控制/PCM 端口）供配对页 UI 与客户端提示；
+                // 吸收上游 v0.9.7.2 的容错——mDNS 广播失败时配对仍可通过手动地址完成。
+                String advertisedName = null;
+                try { advertisedName = advertise(server.getLocalPort(), created); }
+                catch (RuntimeException error) { BridgeLog.error("pairing_advertisement_failed_manual_available", error); }
+                if (advertisedName == null || advertisedName.isEmpty()) advertisedName = "AirSIM";
                 String address = preferredPrivateIPv4() + ":" + server.getLocalPort();
                 listener.onStarted(created.code(), address, advertisedName, server.getLocalPort(),
                         VoWLANGatewayService.activeControlPort(), VoWLANGatewayService.activePcmPort(),
@@ -69,6 +74,9 @@ public final class PairingServer implements Closeable {
                 while (!server.isClosed() && System.currentTimeMillis() <= created.expiresAtMillis()) {
                     try (Socket peer = server.accept()) {
                         if (handle(peer, created)) break;
+                    } catch (Exception error) {
+                        if (server.isClosed()) break;
+                        BridgeLog.info("pairing_peer_failed reason=" + error.getClass().getSimpleName());
                     }
                 }
             } catch (Exception error) {
@@ -85,7 +93,10 @@ public final class PairingServer implements Closeable {
     private boolean handle(Socket peer, PairingSession created) throws Exception {
         peer.setSoTimeout(8_000);
         InetAddress remote = peer.getInetAddress();
-        if (!VoWLANNetworkPolicy.isAllowedPeer(remote)) {
+        // 上游 v0.9.7.2：配对端按“对端+本地地址+接口名”三重校验，支持热点/局域网/VPN 接口白名单。
+        NetworkInterface localNetwork = NetworkInterface.getByInetAddress(peer.getLocalAddress());
+        if (!VoWLANNetworkPolicy.permitsPairingPeer(remote.getHostAddress(), peer.getLocalAddress().getHostAddress(),
+                localNetwork == null ? null : localNetwork.getName())) {
             BridgeLog.info("pairing_claim_rejected reason=non_private_peer");
             respond(peer, 403, "{\"error\":\"private_network_required\"}");
             return false;
@@ -94,16 +105,19 @@ public final class PairingServer implements Closeable {
         byte[] headers = readHeaders(input);
         String headerText = new String(headers, StandardCharsets.US_ASCII);
         String[] lines = headerText.split("\\r\\n");
-        if (lines.length > 0 && lines[0].startsWith("GET /pair/v1/info")) {
-            JSONObject info = new JSONObject()
-                    .put("version", 1)
-                    .put("session_id", created.id())
-                    .put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
-                    .put("expires", created.expiresAtMillis())
+        if (System.currentTimeMillis() > created.expiresAtMillis()) {
+            respond(peer, 410, "{\"error\":\"pairing_expired\"}");
+            return true;
+        }
+        if (lines.length > 0 && "GET /pair/v1/info HTTP/1.1".equals(lines[0])) {
+            // Same public, short-lived material as Bonjour TXT. Never reveal code or credentials.
+            // LD-MOD：附加 device_name/control_port/pcm_port，供 macOS 2.0 / iOS 手动配对页直连展示。
+            respond(peer, 200, new JSONObject().put("product", "airsim-pair").put("version", 1)
+                    .put("session_id", created.id()).put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
+                    .put("expires_at", created.expiresAtMillis())
                     .put("device_name", AndroidAgentIdentity.deviceName())
                     .put("control_port", VoWLANGatewayService.activeControlPort())
-                    .put("pcm_port", VoWLANGatewayService.activePcmPort());
-            respond(peer, 200, info.toString());
+                    .put("pcm_port", VoWLANGatewayService.activePcmPort()).toString());
             return false;
         }
         if (lines.length == 0 || !"POST /pair/v1/claim HTTP/1.1".equals(lines[0])) {
@@ -149,6 +163,7 @@ public final class PairingServer implements Closeable {
             // VoWLAN HMAC 密钥只属于 Android 热点网关。Linux Agent 的 Push
             // 注册结构使用严格 JSON 解码，且无须接触该密钥，因此转发前必须移除。
             registration.remove("vowlan_secret");
+            // LD-MOD：Agent 不可达/本地模式时允许配对完成（凭据仅写入本机网关），不被云端注册失败阻断。
             String agentResponse;
             try {
                 agentResponse = new AgentClient(context).registerPairing(registration.toString());
@@ -156,22 +171,41 @@ public final class PairingServer implements Closeable {
                 BridgeLog.info("agent_pairing_registration_fallback: " + forwardError.getMessage());
                 agentResponse = "{\"configured\":true}";
             }
-            agentResponse = new JSONObject(agentResponse)
-                    .put("agent_id", AndroidAgentIdentity.agentID(context))
-                    .put("android_device_name", AndroidAgentIdentity.deviceName())
+            JSONObject response = new JSONObject(agentResponse)
+                    .put("agent_id", AndroidAgentIdentity.agentID(context));
+            VoWLANPairingStore.saveEncoded(context, vowlanSecret);
+            VoWLANGatewayService.start(context);
+            DirectGatewayRoutes.Ports directPorts = null;
+            if (claim.optBoolean("want_direct_route", false)) {
+                // 上游 v0.9.7.2：仅在客户端显式请求直连路由时，返回本配对接口上的真实网关端口与 HMAC 路由证明。
+                directPorts = awaitDirectRoute(peer.getLocalAddress().getHostAddress());
+                if (directPorts != null) {
+                    byte[] secret = PairingCrypto.decodeBase64URL(vowlanSecret);
+                    try {
+                        String agentID = AndroidAgentIdentity.agentID(context);
+                        response.put("route_proof", DirectGatewayRoutes.proof(secret, created.id(),
+                                claim.getString("client_public_key"), agentID,
+                                directPorts.controlPort(), directPorts.pcmPort()));
+                    } finally { java.util.Arrays.fill(secret, (byte) 0); }
+                }
+            }
+            // LD-MOD：始终返回端口与协议元数据（已装机的 iOS/macOS 客户端依赖这些字段直接建连）；
+            // 上游客户端在 want_direct_route 场景下优先采用 directPorts。
+            int responseControlPort = directPorts != null ? directPorts.controlPort()
+                    : VoWLANGatewayService.activeControlPort();
+            int responsePcmPort = directPorts != null ? directPorts.pcmPort()
+                    : VoWLANGatewayService.activePcmPort();
+            response.put("android_device_name", AndroidAgentIdentity.deviceName())
                     .put("client_device_name", clientDeviceName)
                     .put("device_id_hint", clientDeviceName)
-                    .put("control_port", VoWLANGatewayService.activeControlPort())
-                    .put("pcm_port", VoWLANGatewayService.activePcmPort())
+                    .put("control_port", responseControlPort)
+                    .put("pcm_port", responsePcmPort)
                     .put("protocol_version", "2.0")
                     .put("supported_protocols", new org.json.JSONArray(java.util.List.of("1.0", "2.0")))
                     .put("slots", SIMSlotManager.getSlotsJSON(context))
-                    .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size())
-                    .toString();
-            VoWLANPairingStore.saveEncoded(context, vowlanSecret);
-            VoWLANGatewayService.start(context);
-            respond(peer, 200, agentResponse);
-            listener.onSucceeded(clientDeviceName, agentResponse);
+                    .put("active_slots_count", SIMSlotManager.getActiveSlots(context).size());
+            respond(peer, 200, response.toString());
+            listener.onSucceeded(clientDeviceName, response.toString());
             return true;
         } finally {
             java.util.Arrays.fill(plaintext, (byte) 0);
@@ -206,7 +240,7 @@ public final class PairingServer implements Closeable {
             @Override public void onServiceRegistered(NsdServiceInfo ignored) {}
             @Override public void onRegistrationFailed(NsdServiceInfo ignored, int code) {
                 BridgeLog.info("pairing_advertisement_failed code=" + code);
-                listener.onFailed("热点发现发布失败（" + code + "）");
+                // Keep manual TCP pairing available even if multicast/NSD fails.
             }
             @Override public void onServiceUnregistered(NsdServiceInfo ignored) {}
             @Override public void onUnregistrationFailed(NsdServiceInfo ignored, int code) {}
@@ -277,10 +311,41 @@ public final class PairingServer implements Closeable {
             while (addresses.hasMoreElements()) {
                 InetAddress address = addresses.nextElement();
                 String host = address.getHostAddress();
-                if (address instanceof Inet4Address && VoWLANNetworkPolicy.isAllowedPeer(address) && !host.startsWith("10.185.5.")) return host;
+                // LD-MOD 适配上游 v0.9.7.2 网络策略：本机候选地址取私网或 Tailscale overlay IPv4。
+                if (address instanceof Inet4Address && (VoWLANNetworkPolicy.isPrivateIPv4(host)
+                        || VoWLANNetworkPolicy.isOverlayIPv4(host)) && !host.startsWith("10.185.5.")) return host;
             }
         }
         throw new IOException("未找到 VoWLAN IPv4 地址，请连接 Wi-Fi 或开启移动热点");
+    }
+
+    private static DirectGatewayRoutes.Ports awaitDirectRoute(String localHost) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12);
+        do {
+            DirectGatewayRoutes.Ports ports = VoWLANGatewayService.DIRECT_ROUTES.forHost(localHost);
+            if (ports != null) return ports;
+            Thread.sleep(100);
+        } while (System.nanoTime() < deadline);
+        return null;
+    }
+
+    private static String manualAddresses(int port) throws IOException {
+        List<String> values = new ArrayList<>();
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface item = interfaces.nextElement();
+            if (!item.isUp() || item.isLoopback()) continue;
+            Enumeration<InetAddress> addresses = item.getInetAddresses();
+            while (addresses.hasMoreElements()) {
+                InetAddress value = addresses.nextElement();
+                if (!(value instanceof Inet4Address)) continue;
+                String host = value.getHostAddress();
+                if (VoWLANNetworkPolicy.isVoWLANInterface(item.getName(), host)) values.add("局域网 " + host + ":" + port);
+                else if (VoWLANNetworkPolicy.isOverlayInterface(item.getName(), host)) values.add("VPN " + host + ":" + port);
+            }
+        }
+        values.add("Tailscale：填写本机在 Tailscale 中的 IPv4；配对端口 " + port);
+        return String.join("\n", values);
     }
 
     private static int interfacePriority(String name) {

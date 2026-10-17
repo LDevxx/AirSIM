@@ -223,7 +223,13 @@ final class StandaloneAgentGateway {
     }
 
     synchronized JSONObject executeCloudCommand(JSONObject command) throws Exception {
+        return executeCloudCommand(command,()->true);
+    }
+
+    synchronized JSONObject executeCloudCommand(JSONObject command, java.util.function.BooleanSupplier stillCurrent) throws Exception {
         String commandID = command.optString("command_id", "");
+        if (!stillCurrent.getAsBoolean()) return new JSONObject().put("command_id",commandID)
+                .put("status","failed").put("error","command_configuration_changed");
         String commandKey = commandID.trim().toLowerCase(Locale.ROOT);
         if (!commandKey.isEmpty()) {
             synchronized (commandsLock) {
@@ -256,10 +262,16 @@ final class StandaloneAgentGateway {
                     ? "end" : command.optString("action", "");
             default -> "";
         };
-        String callID = "call_control".equals(type)
+        String callID = CloudCallTarget.requiresIdentity(type)
                 ? StandaloneCloudMediaManager.get(context).androidCallIDFor(command.optJSONObject("call"))
                 : "dial".equals(action) || "send_sms".equals(action)
                     ? "" : CallRepository.idForAction(action);
+        // 上游 v0.9.7.2：云端命令必须命中权威通话 ID，避免迟到的命令误操作下一通电话。
+        if (CloudCallTarget.requiresIdentity(type) && callID.isBlank()) {
+            return rememberCommand(commandKey,new JSONObject().put("command_id",commandID)
+                    .put("status","failed").put("error","call_mismatch"));
+        }
+        // LD-MOD：DSDS 动态双卡聚合——支持按卡槽/订阅 ID 定向外呼与发短信。
         String slotStr = command.optString("slot", "");
         int slotId = command.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
         int subId = command.optInt("sub_id", -1);

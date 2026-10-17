@@ -82,19 +82,33 @@ public final class AirSIMInCallService extends InCallService {
     }
 
 	private void updateLocalAudioPolicy() {
-		if (localAudio == null) return;
-		String mode = AppConfig.mode(this);
-		boolean shouldSilence = RemoteAudioSessionRegistry.active();
-		for (String state : callStates.values()) {
-			if (TelecomStateMapper.shouldSilenceLocalOutput(mode, state)) {
-				shouldSilence = true;
-				break;
-			}
-		}
-		if (!CallRepository.isEmpty()) {
-			shouldSilence = true;
-		}
-		localAudio.update(shouldSilence);
+		// 上游 v0.9.7.2 静音生命周期：仅当远程 PCM 拥有者确实持有当前唯一有效通话时才静音；
+		// 取代 LD-MOD 早期“仓库非空即静音”的一刀切方案，并加入有界看门狗修复。
+		if (localAudio == null || instance != this) return;
+        java.util.List<String> liveCalls = new java.util.ArrayList<>();
+        boolean relayingAudio = false;
+        for (Map.Entry<Call, String> item : callStates.entrySet()) {
+            if (!"ended".equals(item.getValue())) liveCalls.add(CallRepository.id(item.getKey()));
+            // A prepared incoming PCM connection is not an answered call. Also do not
+            // treat STATE_DISCONNECTING (mapped to dialing by the legacy wire protocol)
+            // as permission to re-mute while hangup/media cleanup is still asynchronous.
+            if (item.getKey().getState() != Call.STATE_DISCONNECTING
+                    && ((!"samsung".equalsIgnoreCase(android.os.Build.MANUFACTURER)
+                        && "dialing".equals(item.getValue())) || "active".equals(item.getValue())
+                    || "held".equals(item.getValue()))) relayingAudio = true;
+        }
+        java.util.Collections.sort(liveCalls);
+        String transports = RemoteAudioSessionRegistry.diagnostic();
+        boolean ownsRemoteCall = RemoteAudioSessionRegistry.ownsCall(liveCalls);
+        // Notification presentation mode never proves remote audio ownership. Only
+        // the unique, authenticated call with a ready PCM owner may silence output.
+        // This also restores local audio immediately on media loss, even if Telecom
+        // has not removed the carrier call yet. Microphone and PCM gain are untouched.
+        boolean shouldSilence = relayingAudio && ownsRemoteCall;
+        localAudio.update(shouldSilence);
+        // Multiple native calls cannot safely share a global mute-repair decision.
+        localAudio.updateWatchdog(shouldSilence,
+                liveCalls.toString() + transports, transports);
 	}
 
     public static void refreshAudioPolicy() {
@@ -138,7 +152,10 @@ public final class AirSIMInCallService extends InCallService {
 
     @Override public void onDestroy() {
 		BridgeLog.info("incall_service_destroyed");
-		if (localAudio != null) localAudio.update(false);
+		if (localAudio != null) {
+            localAudio.updateWatchdog(false, "", "");
+            localAudio.update(false);
+        }
         if (instance == this) instance = null;
         network.shutdownNow();
         super.onDestroy();
