@@ -5,6 +5,9 @@
 android/phone-control-app/build/
 android/phone-audio-bridge/build/
 android-standalone/build/
+# Standalone 两个变体各自的构建输出
+android-standalone/AirSim-LDev/build/
+android-standalone/AirSim-Lite-LDev/build/
 *.log
 *.xcuserstate
 **/xcuserdata/
@@ -12,6 +15,14 @@ android-standalone/build/
 **/DerivedData/
 **/build-device/
 iOS/build/
+# 仓库根构建归档目录（iOS 打包产物、Payload 等）
+/build/
+# dist 只保留源码性质的内容（补丁、说明）；二进制产物一律不入库
+/dist/*.ipa
+/dist/*.apk
+/dist/*.aab
+/dist/*.dmg
+/dist/*.bundle
 *.ipa
 *.apk
 *.aab

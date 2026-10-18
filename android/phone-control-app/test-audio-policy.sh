@@ -13,10 +13,12 @@ mkdir -p "$OUT"
   "$ROOT"/test/audio-policy/android/os/Handler.java \
   "$ROOT"/test/audio-policy/android/telecom/InCallService.java \
   "$ROOT"/test/audio-policy/com/airsim/phonecontrol/*.java \
+  "$ROOT"/test/audio-policy/com/airsim/phonecontrol/voble/VoBLEGatewayService.java \
   "$ROOT"/src/com/airsim/phonecontrol/TelecomStateMapper.java \
   "$ROOT"/src/com/airsim/phonecontrol/LocalOutputMuteController.java \
   "$ROOT"/src/com/airsim/phonecontrol/LocalCallAudioController.java \
   "$ROOT"/src/com/airsim/phonecontrol/RemoteAudioSessionRegistry.java \
+  "$ROOT"/src/com/airsim/phonecontrol/voble/VoBLEMediaSession.java \
   "$ROOT"/src/com/airsim/phonecontrol/AirSIMInCallService.java \
   "$ROOT"/test/com/airsim/phonecontrol/RemoteCallMuteLifecycleTests.java
 "$TASK_JAVA_HOME/bin/java" -cp "$OUT:$BASE:$ANDROID_JAR" com.airsim.phonecontrol.RemoteCallMuteLifecycleTests

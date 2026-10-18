@@ -9,83 +9,73 @@ public final class RemoteCallMuteLifecycleTests {
         dialingWaitsForAnswerBeforeReducingSamsungOutput();
         ordinaryCallsStayAudible();
         for (String mode : new String[]{"remote_silent", "local_and_push"}) {
-            remoteLifecycle(mode);
+            for (String transport : new String[]{"vowlan", "voble", "cloud"}) {
+                remoteLifecycle(mode, transport);
+            }
         }
         ringingIsNotAnsweredOwnership();
         extraNativeCallRestoresOutput();
         disconnectingRestoresBeforeRemoval();
         destroyRestoresOriginalVolume();
-        deadPCMRestoresOutput();
+        deadBLEPCMRestoresOutput();
         queuedRefreshCannotRemuteAfterDestroy();
         minimumVolumeUsesAnsweredOwnershipAndRestoresOnMediaLoss();
-        wireDecodedCallIdentityTriggersMinimumVolume();
+        for (String transport : new String[]{"voble", "cloud"}) {
+            wireDecodedCallIdentityTriggersMinimumVolume(transport);
+        }
         differentDecodedCallCannotLowerVolume();
         System.out.println("RemoteCallMuteLifecycleTests passed: " + passed + " scenarios");
     }
 
-    /** VoWLAN PCM 完成握手：只有确认了具体通话 ID 的媒体租约才拥有远端音频。 */
-    private static void ownVoWLAN(String callId) {
-        RemoteAudioSessionRegistry.setVoWLAN(true);
-        DirectCallOwnership.Lease lease = DirectCallOwnership.begin("fixture-host");
-        DirectCallOwnership.record("fixture-host", callId, lease);
-        DirectCallOwnership.pcmReady(lease);
-        AirSIMInCallService.refreshAudioPolicy();
-    }
-
-    private static void releaseVoWLAN() {
-        DirectCallOwnership.end(DirectCallOwnership.capture("fixture-host"), false);
-        RemoteAudioSessionRegistry.setVoWLAN(false);
-        AirSIMInCallService.refreshAudioPolicy();
-    }
-
-    private static void wireDecodedCallIdentityTriggersMinimumVolume() {
+    private static void wireDecodedCallIdentityTriggersMinimumVolume(String transport) {
         ShizukuBridgeManager manager = ShizukuBridgeManager.INSTANCE;
         manager.output = new LocalOutputMuteController(manager.platform,
                 LocalOutputMuteController.Strategy.MINIMUM_VOLUME);
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            // JSON/WebSocket parsing produces equal text, not the repository's String object.
+            Object media = new Object();
+            // JSON/BLE parsing produces equal text, not the repository's String object.
             String decodedID = new String(f.id.toCharArray());
-            ownVoWLAN(decodedID);
-            check(f.audio.volume == 1 && manager.output.isVerifiedMinimum(),
-                    "ready vowlan media with a wire-decoded native call ID must lower Samsung output");
-            check(!f.audio.muted && manager.watchdog,
-                    "minimum policy must start its watchdog without claiming a mute bit");
-            releaseVoWLAN();
-            check(f.audio.volume == 6 && !manager.output.isVerifiedMinimum(),
-                    "releasing the exact media owner must restore the original volume");
+            if ("voble".equals(transport)) {
+                RemoteAudioSessionRegistry.setVoBLE(true);
+                RemoteAudioSessionRegistry.ownCall(media, decodedID);
+            } else RemoteAudioSessionRegistry.setCloud(media, true, decodedID);
+            try {
+                check(f.audio.volume == 1 && manager.output.isVerifiedMinimum(),
+                        "ready " + transport + " media with a wire-decoded native call ID must lower Samsung output");
+                check(!f.audio.muted && manager.watchdog,
+                        "minimum policy must start its watchdog without claiming a mute bit");
+                if ("voble".equals(transport)) RemoteAudioSessionRegistry.releaseCall(media);
+                else RemoteAudioSessionRegistry.setCloud(media, false, "");
+                check(f.audio.volume == 6 && !manager.output.isVerifiedMinimum(),
+                        "releasing the exact media owner must restore the original volume");
+            } finally {
+                RemoteAudioSessionRegistry.releaseCall(media);
+                RemoteAudioSessionRegistry.setVoBLE(false);
+                RemoteAudioSessionRegistry.setCloud(media, false, "");
+            }
         } finally { manager.output = new LocalOutputMuteController(manager.platform); }
         passed++;
     }
 
     private static void differentDecodedCallCannotLowerVolume() {
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            RemoteAudioSessionRegistry.setVoWLAN(true);
-            DirectCallOwnership.Lease other = DirectCallOwnership.begin("fixture-host");
-            DirectCallOwnership.record("fixture-host", f.id + "-other-call", other);
-            DirectCallOwnership.pcmReady(other);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(f.audio.volume == 6 && !f.audio.muted && !ShizukuBridgeManager.INSTANCE.watchdog,
-                    "ready media belonging to a different call must not lower an ordinary call");
-            DirectCallOwnership.end(other, false);
-            AirSIMInCallService.refreshAudioPolicy();
-
-            DirectCallOwnership.Lease owner = DirectCallOwnership.begin("fixture-host");
-            DirectCallOwnership.record("fixture-host", new String(f.id.toCharArray()), owner);
-            DirectCallOwnership.pcmReady(owner);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(f.audio.muted, "the exact decoded call id must claim ownership");
-
-            DirectCallOwnership.Lease bystander = DirectCallOwnership.begin("bystander-host");
-            DirectCallOwnership.record("bystander-host", f.id + "-bystander", bystander);
-            DirectCallOwnership.pcmReady(bystander);
-            DirectCallOwnership.end(bystander, false);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(f.audio.muted, "releasing a different owner must not revoke the actual owner's policy");
-
-            DirectCallOwnership.end(owner, false);
-            RemoteAudioSessionRegistry.setVoWLAN(false);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(f.audio.volume == 6 && !f.audio.muted, "exact owner release must restore output");
+            Object media = new Object();
+            Object nonOwner = new Object();
+            RemoteAudioSessionRegistry.setVoBLE(true);
+            RemoteAudioSessionRegistry.ownCall(media, f.id + "-other-call");
+            try {
+                check(f.audio.volume == 6 && !f.audio.muted && !ShizukuBridgeManager.INSTANCE.watchdog,
+                        "ready media belonging to a different call must not lower an ordinary call");
+                RemoteAudioSessionRegistry.releaseCall(media);
+                RemoteAudioSessionRegistry.ownCall(media, new String(f.id.toCharArray()));
+                RemoteAudioSessionRegistry.releaseCall(nonOwner);
+                check(f.audio.muted, "releasing a different owner must not revoke the actual owner's policy");
+                RemoteAudioSessionRegistry.releaseCall(media);
+                check(f.audio.volume == 6 && !f.audio.muted, "exact owner release must restore output");
+            } finally {
+                RemoteAudioSessionRegistry.releaseCall(media);
+                RemoteAudioSessionRegistry.setVoBLE(false);
+            }
         }
         passed++;
     }
@@ -95,13 +85,14 @@ public final class RemoteCallMuteLifecycleTests {
         manager.output = new LocalOutputMuteController(manager.platform,
                 LocalOutputMuteController.Strategy.MINIMUM_VOLUME);
         try (Fixture f = new Fixture(Call.STATE_DIALING)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(f.audio.volume == 6 && !f.audio.muted, "dialing alone must preserve Samsung volume");
             f.call.setStateForTest(Call.STATE_ACTIVE);
             check(f.audio.volume == 1 && !f.audio.muted && manager.output.isVerifiedMinimum(),
                     "answered remote-owned call must lower the actual stream index, not claim mute");
             f.audio.volume = 3;
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
             check(f.audio.volume == 6 && !f.audio.muted && !manager.output.isVerifiedMinimum(),
                     "lost remote audio must restore the original index while carrier call remains active");
             check(f.call.getState() == Call.STATE_ACTIVE, "volume restoration must never disconnect the call");
@@ -111,12 +102,13 @@ public final class RemoteCallMuteLifecycleTests {
 
     private static void dialingWaitsForAnswerBeforeReducingSamsungOutput() {
         try (Fixture f = new Fixture(Call.STATE_DIALING)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(!f.audio.muted && f.audio.volume == 6,
                     "prepared remote audio must not lower Samsung output before the call is answered");
             f.call.setStateForTest(Call.STATE_ACTIVE);
             check(f.audio.muted, "answered remote audio may apply the selected suppression strategy");
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
             check(!f.audio.muted && f.audio.volume == 6, "media loss must restore the original output");
         }
         passed++;
@@ -130,25 +122,41 @@ public final class RemoteCallMuteLifecycleTests {
         passed++;
     }
 
-    private static void remoteLifecycle(String mode) {
+    private static void remoteLifecycle(String mode, String transport) {
         AppConfig.audioMode = mode;
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
             check(!f.audio.muted, "pairing or native active state alone must not mute");
-            RemoteAudioSessionRegistry.setVoWLAN(true);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(!f.audio.muted, "VoWLAN control without PCM readiness must not mute");
-            DirectCallOwnership.Lease lease = DirectCallOwnership.begin("fixture-host");
-            DirectCallOwnership.record("fixture-host", f.id, lease);
-            DirectCallOwnership.pcmReady(lease);
-            AirSIMInCallService.refreshAudioPolicy();
+            Object owner = new Object();
+            DirectCallOwnership.Lease lease = null;
+            if ("cloud".equals(transport)) {
+                RemoteAudioSessionRegistry.setCloud(owner, true, "");
+                check(!f.audio.muted, "cloud PCM without the confirmed Android ID must not mute");
+                RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
+            } else if ("voble".equals(transport)) {
+                RemoteAudioSessionRegistry.setVoBLE(true);
+                check(!f.audio.muted, "Bluetooth media alone must not own an arbitrary call");
+                RemoteAudioSessionRegistry.ownCall(owner, f.id);
+            } else {
+                lease = DirectCallOwnership.begin("fixture-host");
+                DirectCallOwnership.record("fixture-host", f.id, lease);
+                RemoteAudioSessionRegistry.setVoWLAN(true);
+                check(!f.audio.muted, "VoWLAN control without PCM readiness must not mute");
+                DirectCallOwnership.pcmReady(lease);
+                AirSIMInCallService.refreshAudioPolicy();
+            }
             check(f.audio.muted && ShizukuBridgeManager.INSTANCE.watchdog,
-                    "vowlan ready and owned call must mute using the Shizuku backend in " + mode);
+                    transport + " ready and owned call must mute using the Shizuku backend in " + mode);
             f.audio.volume = 2;
-            DirectCallOwnership.end(lease, false);
-            RemoteAudioSessionRegistry.setVoWLAN(false);
-            AirSIMInCallService.refreshAudioPolicy();
+            if ("cloud".equals(transport)) RemoteAudioSessionRegistry.setCloud(owner, false, "");
+            else if ("voble".equals(transport)) {
+                RemoteAudioSessionRegistry.releaseCall(owner);
+                RemoteAudioSessionRegistry.setVoBLE(false);
+            } else {
+                DirectCallOwnership.end(lease, false);
+                RemoteAudioSessionRegistry.setVoWLAN(false);
+            }
             check(!f.audio.muted && f.audio.volume == 6,
-                    "vowlan media loss must restore the original output while the carrier call is still active");
+                    transport + " media loss must restore the original output while the carrier call is still active");
             check(!ShizukuBridgeManager.INSTANCE.watchdog, "media loss must stop repair");
             check(f.call.getState() == Call.STATE_ACTIVE, "audio policy must not hang up the carrier call");
         } finally { AppConfig.audioMode = "remote_silent"; }
@@ -157,72 +165,107 @@ public final class RemoteCallMuteLifecycleTests {
 
     private static void ringingIsNotAnsweredOwnership() {
         try (Fixture f = new Fixture(Call.STATE_RINGING)) {
-            ownVoWLAN(f.id);
-            check(!f.audio.muted, "preparing incoming remote PCM must not claim an unanswered call");
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
+            check(!f.audio.muted, "preparing incoming cloud PCM must not claim an unanswered call");
             f.call.answer(0);
             check(f.audio.muted, "answer state must activate remote output mute");
             f.call.disconnect();
             check(!f.audio.muted, "terminal call must restore output even before media teardown");
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
         }
         passed++;
     }
 
     private static void extraNativeCallRestoresOutput() {
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(f.audio.muted, "remote call should initially mute");
             Call ordinary = new Call(Call.STATE_RINGING);
             f.service.onCallAdded(ordinary);
             check(!f.audio.muted, "global stream mute must not silence a second ordinary call");
             f.service.onCallRemoved(ordinary);
             check(f.audio.muted, "remaining unique remote call may resume mute");
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
         }
         passed++;
     }
 
     private static void disconnectingRestoresBeforeRemoval() {
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(f.audio.muted, "remote call should initially mute");
             f.call.setStateForTest(Call.STATE_DISCONNECTING);
             check(!f.audio.muted, "disconnecting must never be interpreted as a fresh dialing request");
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
         }
         passed++;
     }
 
     private static void destroyRestoresOriginalVolume() {
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(f.audio.muted, "remote call should initially mute");
             f.audio.volume = 1;
             f.destroy();
             check(!f.audio.muted && f.audio.volume == 6, "InCallService destruction must restore the original output");
-            releaseVoWLAN();
+            RemoteAudioSessionRegistry.setCloud(owner, false, "");
         }
         passed++;
     }
 
-    private static void deadPCMRestoresOutput() {
-        // A confirmed PCM lease that ends (relay stop / TCP EOF) must revoke mute ownership
-        // even while the control connection and carrier call remain alive.
-        try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            ownVoWLAN(f.id);
-            check(f.audio.muted, "live VoWLAN PCM must first mute output");
-            DirectCallOwnership.end(DirectCallOwnership.capture("fixture-host"), false);
-            AirSIMInCallService.refreshAudioPolicy();
-            check(!f.audio.muted, "PCM loss must restore local output immediately");
-            check(f.call.getState() == Call.STATE_ACTIVE, "PCM failure must not end the carrier call");
-            RemoteAudioSessionRegistry.setVoWLAN(false);
+    private static void deadBLEPCMRestoresOutput() throws Exception {
+        // A successful handshake followed by real TCP EOF must revoke mute ownership,
+        // even when the Bluetooth control connection and carrier call remain alive.
+        try (Fixture f = new Fixture(Call.STATE_ACTIVE);
+                java.net.ServerSocket server = new java.net.ServerSocket(0, 1,
+                        java.net.InetAddress.getLoopbackAddress())) {
+            var callbackCount = new java.util.concurrent.atomic.AtomicInteger();
+            var stopped = new java.util.concurrent.CountDownLatch(1);
+            java.util.function.Consumer<com.airsim.phonecontrol.voble.VoBLEMediaSession> listener = owner -> {
+                callbackCount.incrementAndGet();
+                RemoteAudioSessionRegistry.releaseCall(owner);
+                stopped.countDown();
+            };
+            var media = new com.airsim.phonecontrol.voble.VoBLEMediaSession(
+                    new java.net.InetSocketAddress(server.getInetAddress(), server.getLocalPort()),
+                    endpoint -> com.airsim.phonecontrol.voble.VoBLEPCMBridgeSession.open(endpoint,
+                            com.airsim.phonecontrol.voble.VoBLEPCMBridgeSession.socketConnector()),
+                    packet -> true, listener);
+            java.util.concurrent.ExecutorService backend = java.util.concurrent.Executors.newSingleThreadExecutor();
+            var peer = backend.submit(() -> {
+                java.net.Socket socket = server.accept();
+                socket.getInputStream().readNBytes(11); // AIRSIMPCM1 + newline
+                socket.getOutputStream().write("AIRSIMREADY".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                socket.getOutputStream().flush();
+                return socket;
+            });
+            try (media) {
+                media.start(new com.airsim.phonecontrol.voble.VoBLEMediaSession.Identity(f.id, 1), new byte[32]);
+                RemoteAudioSessionRegistry.ownCall(media, f.id);
+                RemoteAudioSessionRegistry.setVoBLE(true);
+                check(f.audio.muted, "live BLE PCM must first mute output");
+                peer.get(2, java.util.concurrent.TimeUnit.SECONDS).close();
+                check(stopped.await(2, java.util.concurrent.TimeUnit.SECONDS), "PCM EOF must notify without waiting for GATT disconnect");
+                check(!f.audio.muted && !media.ready(), "PCM EOF must restore local output immediately");
+                check(callbackCount.get() == 1, "both pumps failing may release this owner only once");
+                check(f.call.getState() == Call.STATE_ACTIVE, "PCM failure must not end the carrier call");
+            } finally {
+                backend.shutdownNow();
+                RemoteAudioSessionRegistry.releaseCall(media);
+                RemoteAudioSessionRegistry.setVoBLE(false);
+            }
         }
         passed++;
     }
 
     private static void queuedRefreshCannotRemuteAfterDestroy() {
         try (Fixture f = new Fixture(Call.STATE_ACTIVE)) {
-            ownVoWLAN(f.id);
+            Object owner = new Object();
+            RemoteAudioSessionRegistry.setCloud(owner, true, f.id);
             check(f.audio.muted, "remote call should initially mute");
             android.os.Handler.deferForTest = true;
             try {
@@ -232,7 +275,7 @@ public final class RemoteCallMuteLifecycleTests {
                 check(!f.audio.muted, "queued policy refresh must not re-mute after service destruction restored output");
             } finally {
                 android.os.Handler.deferForTest = false;
-                releaseVoWLAN();
+                RemoteAudioSessionRegistry.setCloud(owner, false, "");
             }
         }
         passed++;
@@ -246,8 +289,6 @@ public final class RemoteCallMuteLifecycleTests {
         boolean destroyed;
         Fixture(int state) {
             RemoteAudioSessionRegistry.resetForTests();
-            DirectCallOwnership.end(DirectCallOwnership.capture("fixture-host"), false);
-            DirectCallOwnership.end(DirectCallOwnership.capture("bystander-host"), false);
             audio.muted = false; audio.volume = 6;
             call = new Call(state);
             service.onCallAdded(call);
@@ -258,8 +299,6 @@ public final class RemoteCallMuteLifecycleTests {
             else CallRepository.remove(call);
             if (!destroyed) destroy();
             RemoteAudioSessionRegistry.resetForTests();
-            DirectCallOwnership.end(DirectCallOwnership.capture("fixture-host"), false);
-            DirectCallOwnership.end(DirectCallOwnership.capture("bystander-host"), false);
         }
         void destroy() { service.onDestroy(); destroyed = true; }
     }

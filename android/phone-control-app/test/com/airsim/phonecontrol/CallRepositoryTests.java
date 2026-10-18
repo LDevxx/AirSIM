@@ -10,6 +10,7 @@ public final class CallRepositoryTests {
         lateDialCompletionAfterProxyLossEndsOnlyThatCall();
         lossOfOldDirectSessionCannotEndAnotherCall();
         answerNeverTargetsAnActiveCallWithoutRinging();
+        cloudRejectTargetsOnlyItsAuthenticatedCall();
         localRejectUsesPublishedCallIdentity();
         System.out.println("call repository tests passed");
     }
@@ -105,6 +106,32 @@ public final class CallRepositoryTests {
         } finally {
             CallRepository.remove(ringing);
             CallRepository.remove(active);
+        }
+    }
+
+    private static void cloudRejectTargetsOnlyItsAuthenticatedCall() {
+        Call other = new Call(Call.STATE_RINGING);
+        Call target = new Call(Call.STATE_RINGING);
+        String otherID = CallRepository.add(other);
+        String targetID = CallRepository.add(target);
+        try {
+            CloudCallTarget identity = new CloudCallTarget(
+                    "relay-call-7", "d9b59660-05bb-4ea8-9aeb-4505b35c93f9", 3, targetID);
+            String selected = identity.resolve(
+                    "relay-call-7", "d9b59660-05bb-4ea8-9aeb-4505b35c93f9", 3);
+            assertEquals(targetID, selected);
+            CallRepository.ActionResult result = CallRepository.execute(
+                    null, new AgentCommand("command-7", "reject", selected, ""));
+            assertTrue(result.success);
+            assertEquals(Integer.toString(Call.STATE_DISCONNECTED), Integer.toString(target.getState()));
+            assertEquals(Integer.toString(Call.STATE_RINGING), Integer.toString(other.getState()));
+            assertEquals("", identity.resolve(
+                    "relay-call-previous", "d9b59660-05bb-4ea8-9aeb-4505b35c93f9", 3));
+            assertEquals("", identity.resolve(
+                    "relay-call-7", "d9b59660-05bb-4ea8-9aeb-4505b35c93f9", 2));
+        } finally {
+            CallRepository.remove(target);
+            CallRepository.remove(other);
         }
     }
 

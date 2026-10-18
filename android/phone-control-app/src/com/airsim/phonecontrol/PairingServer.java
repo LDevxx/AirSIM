@@ -57,7 +57,7 @@ public final class PairingServer implements Closeable {
                 server.setReuseAddress(true);
                 socket = server;
                 session = created;
-                // LD-MOD：保留扩展 onStarted（含广播名/配对端口/控制/PCM 端口）供配对页 UI 与客户端提示；
+                // LDev：保留扩展 onStarted（含广播名/配对端口/控制/PCM 端口）供配对页 UI 与客户端提示；
                 // 吸收上游 v0.9.7.2 的容错——mDNS 广播失败时配对仍可通过手动地址完成。
                 String advertisedName = null;
                 try { advertisedName = advertise(server.getLocalPort(), created); }
@@ -111,7 +111,7 @@ public final class PairingServer implements Closeable {
         }
         if (lines.length > 0 && "GET /pair/v1/info HTTP/1.1".equals(lines[0])) {
             // Same public, short-lived material as Bonjour TXT. Never reveal code or credentials.
-            // LD-MOD：附加 device_name/control_port/pcm_port，供 macOS 2.0 / iOS 手动配对页直连展示。
+            // LDev：附加 device_name/control_port/pcm_port，供 macOS 2.0 / iOS 手动配对页直连展示。
             respond(peer, 200, new JSONObject().put("product", "airsim-pair").put("version", 1)
                     .put("session_id", created.id()).put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
                     .put("expires_at", created.expiresAtMillis())
@@ -164,7 +164,7 @@ public final class PairingServer implements Closeable {
             // VoWLAN HMAC 密钥只属于 Android 热点网关。Linux Agent 的 Push
             // 注册结构使用严格 JSON 解码，且无须接触该密钥，因此转发前必须移除。
             registration.remove("vowlan_secret");
-            // LD-MOD：Agent 不可达/本地模式时允许配对完成（凭据仅写入本机网关），不被云端注册失败阻断。
+            // LDev：Agent 不可达/本地模式时允许配对完成（凭据仅写入本机网关），不被云端注册失败阻断。
             String agentResponse;
             try {
                 agentResponse = new AgentClient(context).registerPairing(registration.toString());
@@ -190,7 +190,7 @@ public final class PairingServer implements Closeable {
                     } finally { java.util.Arrays.fill(secret, (byte) 0); }
                 }
             }
-            // LD-MOD：始终返回端口与协议元数据（已装机的 iOS/macOS 客户端依赖这些字段直接建连）；
+            // LDev：始终返回端口与协议元数据（已装机的 iOS/macOS 客户端依赖这些字段直接建连）；
             // 上游客户端在 want_direct_route 场景下优先采用 directPorts。
             int responseControlPort = directPorts != null ? directPorts.controlPort()
                     : VoWLANGatewayService.activeControlPort();
@@ -312,7 +312,7 @@ public final class PairingServer implements Closeable {
             while (addresses.hasMoreElements()) {
                 InetAddress address = addresses.nextElement();
                 String host = address.getHostAddress();
-                // LD-MOD 适配上游 v0.9.7.2 网络策略：本机候选地址取私网或 Tailscale overlay IPv4。
+                // LDev 适配上游 v0.9.7.2 网络策略：本机候选地址取私网或 Tailscale overlay IPv4。
                 if (address instanceof Inet4Address && (VoWLANNetworkPolicy.isPrivateIPv4(host)
                         || VoWLANNetworkPolicy.isOverlayIPv4(host)) && !host.startsWith("10.185.5.")) return host;
             }

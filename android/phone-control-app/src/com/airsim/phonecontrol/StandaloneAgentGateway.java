@@ -8,7 +8,10 @@ import org.json.JSONObject;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 /** In-process replacement for the HTTP API previously hosted by the AVF Agent. */
@@ -30,11 +33,13 @@ final class StandaloneAgentGateway {
     private final StandaloneAgentStore store;
     private final StandaloneSMSStore smsStore;
     private final Object callsLock = new Object();
+    private final Object commandsLock = new Object();
     private final StandaloneLongPoll callEvents = new StandaloneLongPoll();
     private final StandaloneLongPoll agentEvents = new StandaloneLongPoll();
     private final StandaloneLongPoll clusterEvents = new StandaloneLongPoll();
     private static final int MAX_CLUSTER_EVENTS = 50;
     private final List<JSONObject> clusterEventsList = new ArrayList<>();
+    private final Map<String, String> commandResults = new LinkedHashMap<>();
     private JSONObject activeCall;
     private final JSONArray callHistory = new JSONArray();
 
@@ -80,17 +85,22 @@ final class StandaloneAgentGateway {
 
     String registerPairing(String registrationJSON) throws Exception {
         JSONObject registration = store.saveRegistration(registrationJSON);
-        store.recordSuccess();
         StandaloneAgentService.start(context);
-        String deviceID = registration.optString("device_id", "");
+        if (registration.optBoolean("local_mode", false)) {
+            BridgeLog.info("standalone_local_pairing_saved");
+            return new JSONObject().put("configured", true).put("local_mode", true).toString();
+        }
+        String deviceID = registration.getString("device_id");
         String hint = deviceID.length() <= 8 ? deviceID : "…" + deviceID.substring(deviceID.length() - 8);
-        BridgeLog.info("standalone_local_pairing_saved device_id_hint="
-                + DebugRedactor.safeIdentifier(hint));
-        return new JSONObject().put("configured", true).put("local_mode", true).toString();
+        BridgeLog.info("standalone_pairing_saved device_id_hint=" + DebugRedactor.safeIdentifier(hint));
+        return new JSONObject().put("configured", true).put("device_id_hint", hint).toString();
     }
 
     void clearPairing() {
         store.clear();
+        synchronized (commandsLock) {
+            commandResults.clear();
+        }
         synchronized (callsLock) {
             activeCall = null;
         }
@@ -104,12 +114,14 @@ final class StandaloneAgentGateway {
         JSONObject event = new JSONObject(json);
         applyCallEvent(event);
         clusterEvents.advance();
+        if (store.configured() && store.cloudEnabled()) {
+            StandaloneAgentService.enqueueCallEvent(context, event.toString());
+        }
     }
 
     void sendSMSEvent(String json) throws Exception {
         JSONObject event = new JSONObject(json);
-        // AirSim-Lite：没有云端 Relay，短信只落在本机存储与局域网事件里，等 AirChat 主动读取。
-        if (smsStore.add(event, false)) {
+        if (smsStore.add(event, store.configured() && store.cloudEnabled())) {
             agentEvents.advance();
             JSONObject smsCluster = new JSONObject()
                     .put("type", "sms_received")
@@ -118,6 +130,7 @@ final class StandaloneAgentGateway {
                     .put("code", event.optString("code", ""))
                     .put("slot_index", event.optInt("slot_id", 0));
             publishClusterEvent(smsCluster);
+            if (store.configured() && store.cloudEnabled()) StandaloneAgentService.start(context);
         }
     }
 
@@ -151,8 +164,8 @@ final class StandaloneAgentGateway {
         JSONObject input = body == null || body.isBlank() ? new JSONObject() : new JSONObject(body);
         return switch (path) {
             case "/api/push/register" -> ok(registerPairing(input.toString()));
-            case "/api/push/mode" -> ok(new JSONObject().put("enabled", false)
-                    .put("configured", store.configured()).put("cloud_removed", true).toString());
+            case "/api/push/mode" -> ok(store.setCloudEnabled(
+                    input.optBoolean("enabled", false)).toString());
             case "/api/calls/dial" -> {
                 String slotStr = input.optString("slot", "");
                 int slotId = input.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
@@ -235,6 +248,89 @@ final class StandaloneAgentGateway {
             case "/api/sms/refresh" -> ok("{\"accepted\":true}");
             default -> error(404, "not_found");
         };
+    }
+
+    synchronized JSONObject executeCloudCommand(JSONObject command) throws Exception {
+        return executeCloudCommand(command,()->true);
+    }
+
+    synchronized JSONObject executeCloudCommand(JSONObject command, java.util.function.BooleanSupplier stillCurrent) throws Exception {
+        String commandID = command.optString("command_id", "");
+        if (!stillCurrent.getAsBoolean()) return new JSONObject().put("command_id",commandID)
+                .put("status","failed").put("error","command_configuration_changed");
+        String commandKey = commandID.trim().toLowerCase(Locale.ROOT);
+        if (!commandKey.isEmpty()) {
+            synchronized (commandsLock) {
+                String cached = commandResults.get(commandKey);
+                if (cached != null) return new JSONObject(cached);
+            }
+        }
+        if (!commandID.matches("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,36}")) {
+            return new JSONObject().put("command_id", commandID).put("status", "failed")
+                    .put("error", "云端命令 ID 无效");
+        }
+        String expires = command.optString("expires_at", "");
+        if (!expires.isEmpty()) {
+            try {
+                if (Instant.now().isAfter(Instant.parse(expires))) {
+                    return rememberCommand(commandKey, new JSONObject().put("command_id", commandID)
+                            .put("status", "failed").put("error", "云端命令已过期"));
+                }
+            } catch (Exception invalidExpiry) {
+                return rememberCommand(commandKey, new JSONObject().put("command_id", commandID)
+                        .put("status", "failed").put("error", "云端命令有效期无效"));
+            }
+        }
+        String type = command.optString("type", "");
+        String action = switch (type) {
+            case "dial" -> "dial";
+            case "send_sms" -> "send_sms";
+            case "dtmf" -> "dtmf";
+            case "call_control" -> "rescue_hangup".equals(command.optString("action"))
+                    ? "end" : command.optString("action", "");
+            default -> "";
+        };
+        String callID = CloudCallTarget.requiresIdentity(type)
+                ? StandaloneCloudMediaManager.get(context).androidCallIDFor(command.optJSONObject("call"))
+                : "dial".equals(action) || "send_sms".equals(action)
+                    ? "" : CallRepository.idForAction(action);
+        // 上游 v0.9.7.2：云端命令必须命中权威通话 ID，避免迟到的命令误操作下一通电话。
+        if (CloudCallTarget.requiresIdentity(type) && callID.isBlank()) {
+            return rememberCommand(commandKey,new JSONObject().put("command_id",commandID)
+                    .put("status","failed").put("error","call_mismatch"));
+        }
+        // LDev：DSDS 动态双卡聚合——支持按卡槽/订阅 ID 定向外呼与发短信。
+        String slotStr = command.optString("slot", "");
+        int slotId = command.optInt("slot_id", SIMSlotManager.parseSlotIdentifier(slotStr));
+        int subId = command.optInt("sub_id", -1);
+        AgentCommand local = new AgentCommand(commandID, action, callID,
+                command.optString("number", ""), command.optString("message", ""), slotId, subId, slotStr);
+        AgentCommandDispatcher.Result result = execute(local);
+        JSONObject output = new JSONObject().put("command_id", commandID)
+                .put("status", result.success() ? "completed" : "failed");
+        if (result.success()) {
+            JSONObject detail = new JSONObject();
+            if ("send_sms".equals(action)) detail.put("sent", true).put("segments", result.segments());
+            else if ("dial".equals(action)) detail.put("dialing", true).put("android_confirmed", true);
+            else if ("answer".equals(action)) detail.put("answered", true).put("android_confirmed", true);
+            else if ("end".equals(action) || "reject".equals(action)) detail.put("ended", true).put("android_confirmed", true);
+            else detail.put("sent", true);
+            output.put("result", detail);
+        } else {
+            output.put("error", result.error());
+        }
+        return rememberCommand(commandKey, output);
+    }
+
+    private JSONObject rememberCommand(String commandKey, JSONObject output) {
+        if (commandKey.isEmpty()) return output;
+        synchronized (commandsLock) {
+            commandResults.put(commandKey, output.toString());
+            while (commandResults.size() > 128) {
+                commandResults.remove(commandResults.keySet().iterator().next());
+            }
+        }
+        return output;
     }
 
     private AgentClient.ForwardResponse command(String action, String callID, String number, String message)

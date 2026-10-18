@@ -237,7 +237,7 @@ public final class VoWLANGatewayService extends Service {
         control = nextControl;
         pcm = nextPCM;
         activeHotspot = host;
-        // LD-MOD：动态端口跟踪供 UI/配对页/健康接口展示；上游 v0.9.7.2 直连路由表并行登记。
+        // LDev：动态端口跟踪供 UI/配对页/健康接口展示；上游 v0.9.7.2 直连路由表并行登记。
         activeControlPort = control.localPort();
         activePcmPort = pcm.localPort();
         DIRECT_ROUTES.put(host, control.localPort(), pcm.localPort());

@@ -11,6 +11,24 @@ AirSIM is a cross-device calling and messaging project. An Android phone owns th
 CURRENT RELEASE BASELINE (2026-10-14)
 Apps v0.9.7.1: Android 0.9.7.1 (81), iOS 0.9.7 (81). Android 10–13 compatibility hotfix: recommended installation, prefer Standalone. Legacy AVF Agent stays v0.4.6 (Debian 0.4.6-1); Relay protocol 0.2.1. GitHub IPA is unsigned; the maintainer uploads a separate production build via Xcode to TestFlight. Upload, processing, external testing and review are distinct states; verify before reporting.
 
+LOCAL LDev BASELINE (2026-10-18)
+This repo is a fork of upstream AirSIM that carries FOUR separate content classes. They are independent: version numbers, verification status and ownership must not be merged or presented as one project.
+
+1. UPSTREAM AirSIM — author kai-wu-cortex. Dirs: android/, iOS/, module/, push-relay-worker/, docs/. Upstream release v0.9.7.2 (91). Never rewrite upstream version numbers or release notes.
+
+2. AirSIM Lite — a lightweight derivative cut from the UPSTREAM Android Standalone by this fork. Keeps VoWLAN only; VoBLE and cloud Relay were removed. Dirs: android-standalone/, android/phone-control-app/, android/phone-audio-bridge/. Version `AirSim-Lite V0.9.7.2 LDev 1`, versionCode 91, packages `com.airsim.phonecontrol.standalone` / `com.airsim.phonecontrol`.
+
+2b. Android Standalone has TWO fork variants, each in its own directory, both appending `LDev <revision>` to the upstream version and sharing ONE source tree (android/phone-control-app/src/). Capability differences come only from each variant's AndroidManifest.xml and are read at runtime by FeatureFlags:
+- android-standalone/AirSim-LDev/ — `V0.9.7.2 LDev 911`; VoWLAN + VoBLE + cloud Relay; declares VoBLEGatewayService, Bluetooth permissions and meta-data com.airsim.phonecontrol.CLOUD_RELAY=true.
+- android-standalone/AirSim-Lite-LDev/ — `AirSim-Lite V0.9.7.2 LDev 1`; VoWLAN only; the same manifest omits those three declarations, so FeatureFlags.voBLEAvailable() and cloudRelayAvailable() return false and the Bluetooth UI plus Relay heartbeat stay off.
+Both use versionCode 91 and package com.airsim.phonecontrol.standalone, so they cannot coexist or upgrade over each other; switching requires uninstalling. `android-standalone/build.sh` and `test.sh` remain as forwarding entry points defaulting to the Lite variant; set AIRSIM_STANDALONE_VARIANT=full to target the full build.
+
+3. AirChat iOS — a modified derivative of the UPSTREAM iOS app by this fork. Dir: iOS/ (CFBundleDisplayName AirChat, PRODUCT_NAME AirSIM). Version `V0.9.7.2 LDev 1`, CURRENT_PROJECT_VERSION 92, AIRSIM_LD_VERSION in project.pbxproj.
+
+4. AirChat Android / macOS — INDEPENDENT works by this fork author, NOT derived from upstream code. Dirs: AirChat/Android/ (`com.airsim.client`, `V0.2.0 LDev`, versionCode 21) and AirChat/MacOS/ (V0.2.1 LDev). These are not upstream AirSIM releases and must not be described as such.
+
+Version identifier is `LDev` (the legacy spelling `LD-MOD` is retired). When changing a version name, update the matching manifest/gradle/pbxproj and the android-standalone/test.sh assertion together.
+
 PAIRING/COMPATIBILITY
 Unpublished workspace candidate build83 adds manual IPv4 + per-window pairing port without Bonjour dependency. See docs/manual-ip-pairing.md. Both apps need updating; no Linux Agent or Relay deployment. Support private LAN IPv4 and100.64.0.0/10; Android userspace Tailscale may proxy to an explicitly bound loopback gateway. Preserve HMAC/replay/PCM exclusivity, never expose AVF8575/8576 or shell7580. Persist only authenticated route identity/address/ports, not old phone numbers. Honor deletion/binding and current endpoint epochs. Proxy loss ends only the owned Telecom call ID, including late control completions. Physical Tailscale operation remains unverified.
 iOS Pair Android Phone has a per-attempt local-only toggle; never mutate global local/cloud mode. Local packages contain only VoWLAN credentials. Serialize pairing with in-flight Agent registration writes and preserve local Agent configuration during automatic refresh, without disabling unrelated global Relay token refresh. Android API 29+ compatibility and API 34-gated AVF recovery details are in the shared Android README.

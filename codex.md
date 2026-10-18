@@ -1,5 +1,26 @@
 # AirSIM 全项目 Codex 部署辅助
 
+## 本仓库基线（四类内容，其中 ② 含两个变体）
+
+这是 [kai-wu-cortex/AirSIM](https://github.com/kai-wu-cortex/AirSIM) 的 fork，同时承载四类互不隶属的内容（② 含两个 Standalone 变体）：
+
+**① 上游 AirSIM** — 原作者 kai-wu-cortex，目录 `android/`、`iOS/`、`module/`、`push-relay-worker/`、`docs/`，上游发布 `v0.9.7.2 (91)`。不得改写上游版本号与发布说明。
+
+**② AirSIM Lite** — 本 fork 基于**上游 Android Standalone** 裁出的轻量版，仅保留 VoWLAN，移除 VoBLE 与云端 Relay。目录 `android-standalone/`、`android/phone-control-app/`、`android/phone-audio-bridge/`，版本 `AirSim-Lite V0.9.7.2 LDev 1`，`versionCode 91`。
+
+**②b Android Standalone 的两个 fork 变体** — 各有独立目录，均在上游版本号后追加 `LDev <修改次数>`，**共用同一份源码**（`android/phone-control-app/src/`），能力差异只来自各自的 `AndroidManifest.xml`，运行时由 `FeatureFlags` 读取：
+
+- `android-standalone/AirSim-LDev/` — `V0.9.7.2 LDev 911`，VoWLAN + VoBLE + 云端 Relay。
+- `android-standalone/AirSim-Lite-LDev/` — `AirSim-Lite V0.9.7.2 LDev 1`，仅 VoWLAN。
+
+两者 `versionCode` 同为 91、包名相同，无法共存或互相覆盖升级，切换需先卸载。`android-standalone/build.sh` 与 `test.sh` 保留为转发入口，默认 Lite；`AIRSIM_STANDALONE_VARIANT=full` 切到完整版。
+
+**③ AirChat iOS** — 本 fork 基于**上游 iOS** 改造的修改版，目录 `iOS/`，版本 `V0.9.7.2 LDev 1`，属 `project.pbxproj` 的 `AIRSIM_LD_VERSION`。
+
+**④ AirChat Android / macOS** — 本 fork 作者的**独立开发版**，不基于上游代码：`AirChat/Android/`（`com.airsim.client`，`V0.2.0 LDev`，`versionCode 21`）、`AirChat/MacOS/`（`V0.2.1 LDev`）。不得表述为上游发布内容。
+
+版本标识统一使用 `LDev`，旧写法 `LD-MOD` 已废弃。改版本名时同步对应的 manifest／gradle／pbxproj 与 `android-standalone/test.sh` 断言；上游 Release 文档的历史版本号不得机械替换。
+
 2026-10-16 应用发布更新：Apps `v0.9.7.2`，Android `0.9.7.2 (91)`，iOS `0.9.7 (91)`。见 `docs/releases/0.9.7.2.md`；推荐 Android 10–13 升级 Standalone。包含后续候选功能，但三星最低音量与更多后台／OEM 场景仍待真机验收；不更新 Linux Agent 二进制，不新增 workflow，不随应用发布部署 Relay。以下较早基线保留追溯。
 
 本文为 AI 编码代理提供 AirSIM 全仓库的事实来源、构建顺序、部署边界和安全约束。开始任务前先阅读根目录 `README.md`，再阅读所修改组件的 README 和实际源码。涉及 AVF 安装、配对或恢复时，还要阅读 `docs/AVF_INSTALL_GUIDE.md` 和 `LLM.txt`。源码与测试是协议事实来源；本文不能替代它们。

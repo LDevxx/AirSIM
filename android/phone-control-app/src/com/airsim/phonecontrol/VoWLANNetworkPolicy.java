@@ -74,7 +74,7 @@ public final class VoWLANNetworkPolicy {
         return isHotspotInterface(name, host) || name.startsWith("wlan");
     }
 
-    // LD-MOD：保持 public，供主界面直连端点卡片区分局域网与 Tailscale 地址。
+    // LDev：保持 public，供主界面直连端点卡片区分局域网与 Tailscale 地址。
     public static boolean isPrivateIPv4(String host) {
         int[] fields = ipv4(host);
         return fields != null && (fields[0] == 10 || (fields[0] == 172 && fields[1] >= 16 && fields[1] <= 31)

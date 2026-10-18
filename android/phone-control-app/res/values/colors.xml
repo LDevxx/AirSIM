@@ -18,7 +18,7 @@
     <color name="airsim_nav_ripple">#33A8A29A</color>
     <color name="airsim_app_bar_surface">#141414</color>
 
-    <!-- 主题强调色（暗色板）：LD-MOD 固定 #C2A878 金。 -->
+    <!-- 主题强调色（暗色板）：LDev 固定 #C2A878 金。 -->
     <color name="airsim_theme_green">#00C48C</color>
     <color name="airsim_theme_cyan">#C2A878</color>
     <color name="airsim_theme_blue">#C2A878</color>
@@ -39,7 +39,7 @@
     <color name="airsim_danger_light">#E0342C</color>
     <color name="airsim_nav_ripple_light">#3366738A</color>
     <color name="airsim_app_bar_surface_light">#FFFFFF</color>
-    <!-- 主题强调色（亮色板）：LD-MOD 固定 #2563EB 蓝。 -->
+    <!-- 主题强调色（亮色板）：LDev 固定 #2563EB 蓝。 -->
     <color name="airsim_theme_green_light">#00C48C</color>
     <color name="airsim_theme_cyan_light">#2563EB</color>
     <color name="airsim_theme_blue_light">#2563EB</color>

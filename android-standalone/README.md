@@ -1,10 +1,21 @@
 # AirSIM Android Standalone
 
-当前发布版：[0.9.7.2（91）](../docs/releases/0.9.7.2.md)，推荐 Android 10–13 用户升级。包含下述候选改动、VoBLE 解码通话 ID 归属修正及三星接通后最低音量策略；最低档不代表静音，91 实际降音量与双向语音效果仍待真机复验。正式 APK 沿用原发布证书，不能覆盖不同证书的调试包。以下旧候选记录保留用于追溯。
+上游发布版：[0.9.7.2（91）](../docs/releases/0.9.7.2.md)，推荐 Android 10–13 用户升级。包含下述候选改动、VoBLE 解码通话 ID 归属修正及三星接通后最低音量策略；最低档不代表静音，91 实际降音量与双向语音效果仍待真机复验。正式 APK 沿用原发布证书，不能覆盖不同证书的调试包。以下旧候选记录保留用于追溯。
 
-工作区候选构建为 `0.9.7.1 (86)`，尚未发布；build 81 仍为下文正式发布基线。候选版在「设置 → 关于」显示实际安装 APK 的版本号与 versionCode，并提供 GitHub 仓库与版本发布页入口。
+**本目录维护两个 fork 变体**，均基于**上游 Android Standalone** 修改，版本名在上游版本号后追加 `LDev <修改次数>`：
 
-build 86 将 Shizuku 本机通话静音绑定到已确认的唯一远程通话和就绪 PCM 链路，而不是仅依赖“远端静默”设置。VoWLAN／VoBLE／Standalone 云端接管后自动静音，通话结束、链路中断或服务销毁时恢复原状态；不修改麦克风和 PCM 增益。蓝牙 PCM 中断但控制连接尚在线时也释放静音。[行为、日志和真机验收边界](../docs/remote-call-local-output-mute.md)。
+| 变体 | 目录 | 版本名 | 能力 |
+| --- | --- | --- | --- |
+| 完整修改版 | [`AirSim-LDev/`](AirSim-LDev/README.md) | `V0.9.7.2 LDev 911` | VoWLAN + VoBLE 蓝牙 + 云端 Relay |
+| Lite 轻量版 | [`AirSim-Lite-LDev/`](AirSim-Lite-LDev/README.md) | `AirSim-Lite V0.9.7.2 LDev 1` | 仅 VoWLAN |
+
+两个变体**共用同一份源码**（`android/phone-control-app/src/`），差异只在各自的 `AndroidManifest.xml`：Lite 版不声明 `VoBLEGatewayService`、蓝牙权限与 `CLOUD_RELAY` meta-data，运行时由 `FeatureFlags` 读取 Manifest 决定能力，因此不会出现两套逻辑漂移。
+
+两者 `versionCode` 均为 91、包名相同，**不能共存也不能互相覆盖升级**，切换变体需先卸载并重新配对。
+
+上游 `0.9.7.2 (91)` 的发布说明与下文 build 83–86 记录属于上游历史归档，保留追溯。
+
+build 86 将 Shizuku 本机通话静音绑定到已确认的唯一远程通话和就绪 PCM 链路，而不是仅依赖“远端静默”设置。VoWLAN 接管后自动静音，通话结束、链路中断或服务销毁时恢复原状态；不修改麦克风和 PCM 增益。[行为、日志和真机验收边界](../docs/remote-call-local-output-mute.md)。build 83–86 的编号属于上游候选阶段记录，不对应 Lite 版的 `LDev 1` 版本名。
 
 build 85 在后台 VoWLAN 前台服务观察 Wi-Fi 变化，合并网络通知后重发发现广播，不要求打开安卓界面、不为广播恢复重启现有通话 Socket；支持断线后取得相同 IP 的情况。[同网恢复机制与真机验收边界](../docs/vowlan-network-return.md)。
 
@@ -60,14 +71,24 @@ Shizuku 仍是采集和注入系统通话音频所需的权限桥。Standalone �
 需要 JDK 17、Android SDK Platform 35、Build Tools 35 和 Python 3。构建脚本默认读取 `ANDROID_SDK_ROOT`；未设置时使用 Homebrew Android command-line tools 路径。
 
 ```sh
-./android-standalone/test.sh
+# 完整版（VoWLAN + VoBLE + 云端 Relay）
+./android-standalone/AirSim-LDev/test.sh
+./android-standalone/AirSim-LDev/build.sh
+
+# Lite 版（仅 VoWLAN）
+./android-standalone/AirSim-Lite-LDev/test.sh
+./android-standalone/AirSim-Lite-LDev/build.sh
+
+# 兼容入口：默认构建 Lite，可用环境变量切换
 ./android-standalone/build.sh
+AIRSIM_STANDALONE_VARIANT=full ./android-standalone/build.sh
 ```
 
 调试 APK 输出到：
 
 ```text
-android-standalone/build/android/AirSIM-Android-Standalone-debug.apk
+android-standalone/AirSim-LDev/build/android/AirSim-LDev-debug.apk
+android-standalone/AirSim-Lite-LDev/build/android/AirSim-Lite-LDev-debug.apk
 ```
 
 构建不可调试的正式签名 APK：
@@ -78,10 +99,10 @@ AIRSIM_ANDROID_KEYSTORE=/absolute/path/to/airsim-android-release.jks \
 AIRSIM_ANDROID_KEY_ALIAS=airsim \
 AIRSIM_ANDROID_KEYSTORE_PASSWORD='从 Secret Store 注入' \
 AIRSIM_ANDROID_KEY_PASSWORD='从 Secret Store 注入' \
-./android-standalone/build.sh
+./android-standalone/AirSim-LDev/build.sh
 ```
 
-正式 APK 输出为 `android-standalone/build/android/AirSIM-Android-Standalone-release.apk`。发布签名私钥和密码不得写入仓库、脚本、Release 或日志；覆盖升级时必须沿用上一版的签名证书。
+正式 APK 输出为 `android-standalone/AirSim-LDev/build/android/AirSim-LDev-release.apk`（Lite 版同理，替换目录名）。发布签名私钥和密码不得写入仓库、脚本、Release 或日志；覆盖升级时必须沿用上一版的签名证书。
 
 ## 安装与首次配置
 

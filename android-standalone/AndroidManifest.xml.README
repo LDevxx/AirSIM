@@ -1,0 +1,23 @@
+# android-standalone/AndroidManifest.xml —— 已迁移
+
+本文件不再参与构建。原先它是 Android Standalone 唯一的 Manifest，
+现在两个变体各自持有自己的副本：
+
+| 变体 | Manifest | versionName | 能力 |
+| --- | --- | --- | --- |
+| AirSim-LDev（完整版） | `AirSim-LDev/AndroidManifest.xml` | `V0.9.7.2 LDev 911` | VoWLAN + VoBLE + 云端 Relay |
+| AirSim-Lite-LDev（Lite 版） | `AirSim-Lite-LDev/AndroidManifest.xml` | `AirSim-Lite V0.9.7.2 LDev 1` | 仅 VoWLAN |
+
+构建与测试请使用变体目录下的脚本，或使用保留兼容行为的转发入口：
+
+```sh
+./android-standalone/AirSim-LDev/build.sh        # 完整版
+./android-standalone/AirSim-Lite-LDev/build.sh   # Lite 版
+
+./android-standalone/build.sh                     # 默认 Lite
+AIRSIM_STANDALONE_VARIANT=full ./android-standalone/build.sh   # 完整版
+```
+
+两个变体共用 `android/phone-control-app/src/` 的同一份源码，
+能力差异由各自 Manifest 声明的服务、权限与 `CLOUD_RELAY` meta-data 决定，
+由 `FeatureFlags` 在运行时读取。

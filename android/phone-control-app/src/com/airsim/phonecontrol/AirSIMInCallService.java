@@ -80,7 +80,7 @@ public final class AirSIMInCallService extends InCallService {
 
 	private void updateLocalAudioPolicy() {
 		// 上游 v0.9.7.2 静音生命周期：仅当远程 PCM 拥有者确实持有当前唯一有效通话时才静音；
-		// 取代 LD-MOD 早期“仓库非空即静音”的一刀切方案，并加入有界看门狗修复。
+		// 取代 LDev 早期“仓库非空即静音”的一刀切方案，并加入有界看门狗修复。
 		if (localAudio == null || instance != this) return;
         java.util.List<String> liveCalls = new java.util.ArrayList<>();
         boolean relayingAudio = false;
@@ -119,6 +119,8 @@ public final class AirSIMInCallService extends InCallService {
 
     private void emit(String callId, String direction, String state, String number,
                       int slotId, int subId, String carrier, String targetNumber) {
+        com.airsim.phonecontrol.voble.VoBLEGatewayService.publishCallState(
+                this, callId, direction, state, number);
         String eventId = Long.toString(System.currentTimeMillis()) + "-" + events.incrementAndGet();
         String json = WireJson.callEvent(eventId, callId, direction, state, number, AppConfig.mode(this),
                 slotId, subId, carrier, targetNumber);

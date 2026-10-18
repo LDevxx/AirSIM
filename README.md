@@ -1,6 +1,44 @@
 # AirSIM — Android 与 iPhone / Apple Watch 跨设备通话、短信和 VoWLAN
 
-[Apps v0.9.7.2 · build 91](docs/releases/0.9.7.2.md)：连接恢复、VoBLE、完整联系人姓名、短信删除与音频诊断。推荐 Android 10–13 用户升级 Standalone；三星最低通话音量效果仍待真机复验。包含 [Relay 多安卓定向命令与退避](docs/relay-agent-routing.md)；本次应用发布不部署 Relay。
+> **上游发布说明（历史归档）** [Apps v0.9.7.2 · build 91](docs/releases/0.9.7.2.md)：连接恢复、VoBLE、完整联系人姓名、短信删除与音频诊断。这段描述的是**上游 AirSIM** 的发布内容，不是本 fork 两个变体的当前能力范围；本 fork 的 AirSim-Lite-LDev 变体不包含 VoBLE 与云端 Relay。
+
+## 仓库构成与版本归属
+
+本仓库是 [kai-wu-cortex/AirSIM](https://github.com/kai-wu-cortex/AirSIM) 的 fork，同时承载**四类不同来源**的内容（② 含两个 Standalone 变体）。它们互不隶属，版本号、验收状态与责任边界各自独立：
+
+| 类别 | 内容 | 来源 | 目录 | 当前版本 |
+| --- | --- | --- | --- | --- |
+| **① 上游 AirSIM** | 原作者项目本体 | kai-wu-cortex | `android/`、`iOS/`、`module/`、`push-relay-worker/`、`docs/` | 上游 `v0.9.7.2 (91)` |
+| **② AirSIM Lite** | 基于**上游 Android Standalone** 裁出的轻量版：仅保留 VoWLAN，移除 VoBLE 与云端 Relay | 本 fork 基于上游改造 | `android-standalone/`、`android/phone-control-app/`、`android/phone-audio-bridge/` | `AirSim-Lite V0.9.7.2 LDev 1` |
+| **③ AirChat iOS** | 基于**上游 iOS** 改造的修改版 | 本 fork 基于上游改造 | `iOS/` | `V0.9.7.2 LDev 1` |
+| **④ AirChat Android / macOS** | **完全独立开发**，不基于上游代码 | 本 fork 作者原创 | `AirChat/Android/`、`AirChat/MacOS/` | Android `V0.2.0 LDev`<br>macOS `V0.2.1 LDev` |
+
+### Android Standalone 的两个变体
+
+本 fork 对上游 **Android Standalone** 做过两次独立修改，均在上游版本号后追加 `LDev <修改次数>` 作为标识。两个变体各自有独立目录，**共用同一份源码**，能力差异只由各自的 `AndroidManifest.xml` 决定：
+
+| 变体 | 目录 | 版本名 | 能力 | 归档包 |
+| --- | --- | --- | --- | --- |
+| 完整修改版 | [`android-standalone/AirSim-LDev/`](android-standalone/AirSim-LDev/README.md) | `V0.9.7.2 LDev 911` | VoWLAN + VoBLE 蓝牙 + 云端 Relay | `dist/AirSIM-V0.9.7.2-LDev-911.apk` |
+| **Lite 轻量版** | [`android-standalone/AirSim-Lite-LDev/`](android-standalone/AirSim-Lite-LDev/README.md) | `AirSim-Lite V0.9.7.2 LDev 1` | 仅 VoWLAN | `dist/AirSim-Lite V0.9.7.2 LDev 1.apk` |
+
+Lite 版不声明 `VoBLEGatewayService`、蓝牙权限与 `CLOUD_RELAY` meta-data；运行时由 `FeatureFlags` 读取 Manifest 判断能力，因此蓝牙配对 UI、蓝牙诊断卡与云端心跳会自动关闭，无需维护两套源码。
+
+两个变体包名相同、`versionCode` 均为 `91`，**不能共存，也不能互相覆盖升级**，切换需先卸载并重新配对。
+
+构建入口：
+
+```sh
+./android-standalone/AirSim-LDev/test.sh        # 完整版
+./android-standalone/AirSim-Lite-LDev/test.sh   # Lite 版
+```
+
+**边界声明：**
+
+- ①属于上游作者，遵循其原有许可与文档；本 fork 不改写上游的版本号与发布说明。
+- ②③ 是基于上游衍生的修改版，改动范围与验收状态见各自组件 README，不得表述为上游官方能力。
+- ④ 是本 fork 作者的独立作品，与上游 AirSIM 无代码继承关系，也不属于上游发布内容。
+- 版本标识统一使用 `LDev`（旧称 `LD-MOD` 已全部废弃），格式为`上游版本号 + LDev + 修改次数`。
 
 [![Android Standalone](https://img.shields.io/badge/Android-Standalone%20APK-3DDC84?logo=android&logoColor=white)](android-standalone/README.md)
 [![iOS](https://img.shields.io/badge/iOS-16.3%2B-000000?logo=apple&logoColor=white)](iOS/README.md)
@@ -36,61 +74,106 @@ https://t.me/+TRDazm-qnXlhNGRl
 
 ## 核心能力
 
+下表标注每项能力在 Android 侧两个变体中的支持情况。**AirSim-LDev** 为完整修改版，**AirSim-Lite-LDev** 为仅保留局域网直连的轻量版。
+
+| 能力 | AirSim-LDev | AirSim-Lite-LDev |
+| --- | :---: | :---: |
+| 跨设备电话（拨号、接听、拒接、挂断、静音、DTMF） | ✅ | ✅ |
+| 跨设备短信（同步状态、发送、APNs 通知） | ✅ | ✅ |
+| VoWLAN 本地直连（HMAC 认证控制 + PCM） | ✅ | ✅ |
+| 手动地址配对（IPv4 + 配对端口，支持局域网 / Tailscale） | ✅ | ✅ |
+| 同网恢复（网络变化后重发发现广播） | ✅ | ✅ |
+| 本地短信删除与音频 Watchdog | ✅ | ✅ |
+| CallKit 与 PushKit | ✅ | ✅ |
+| 单 APK Android 端（内置 Agent 与 Bridge，不依赖 AVF） | ✅ | ✅ |
+| HyperOS 自动配置 | ✅ | ✅ |
+| Android 通话音频桥（Shizuku `UserService`） | ✅ | ✅ |
+| **VoBLE 蓝牙直连** | ✅ | ❌ |
+| **云端 Relay** | ✅ | ❌ |
+| **云端模式与 iOS Relay 自检** | ✅ | ❌ |
+
+**能力说明：**
+
 - **跨设备电话**：在 iPhone 或 Apple Watch 上拨号、接听、拒接、挂断、静音并发送 DTMF，由三星 Android 手机完成运营商通话。
 - **跨设备短信**：同步短信状态、发送短信并通过 APNs 通知 Apple 客户端。
-- **回到同一 Wi-Fi 恢复 VoWLAN（候选 build 85）**：安卓网络事件重发发现广播，iOS 重新发现并认证；自动模式空闲时回到 VoWLAN，固定云端不变、通话中不换链路，不新增 Relay 定时查询。未发布／真机验收，详见[说明](docs/vowlan-network-return.md)。
+- **VoWLAN 本地直连**：iPhone 与三星手机处于同一局域网或三星热点时，使用经过 HMAC 认证的控制与 PCM 链路。
+- **手动地址配对（候选 build 83）**：自动发现受限时，可填写安卓 IPv4 与本次配对端口，保留六位码加密认证；支持局域网及 Tailscale 地址。两端更新及验收边界见[使用说明](docs/manual-ip-pairing.md)，尚未发布／真机 Tailscale 验收。
+- **同网恢复（候选 build 85）**：安卓网络事件重发发现广播，iOS 重新发现并认证；自动模式空闲时回到 VoWLAN，通话中不换链路。未发布／真机验收，详见[说明](docs/vowlan-network-return.md)。
 - **本地短信删除与音频诊断（候选 build 84）**：iOS 支持单条／会话／多选删除并防旧同步回流；安卓对已确认的远程通话执行有界静音复检与修复，可导出 VERBOSE TXT。未发布／真机验收，详见[说明](docs/sms-deletion-audio-watchdog.md)。
 - **CallKit 与 PushKit**：在 iPhone 上呈现系统来电界面，并支持 VoIP push 唤醒与来电上报。
-- **VoWLAN 本地直连**：iPhone 与三星手机处于同一局域网或三星热点时，使用经过 HMAC 认证的控制与 PCM 链路。
-- **手动地址配对（工作区候选 build 83）**：自动发现受限时，可填写安卓 IPv4 与本次配对端口，保留六位码加密认证；支持局域网及 Tailscale 地址，不依赖 AirSIM Relay。两端更新及验收边界见[使用说明](docs/manual-ip-pairing.md)，尚未发布／真机 Tailscale 验收。
-- **VoBLE 蓝牙直连（VoBLE 分支）**：把蓝牙作为设置中的独立连接模式；不依赖 Wi-Fi、Relay、PushKit 或云端参数，通过认证 BLE GATT 通道承载电话控制和双向通话音频。
 - **单 APK Android 端**：内置 Agent 与 Bridge，安装后不再依赖 AVF Linux、Terminal、Debian 或 installer。
-- **云端 Relay**：通过独立部署的 Cloudflare Worker、KV 与 Durable Objects 连接 Android 内置 Agent 和 Apple 客户端。
-- **可观察的模式与自检**：Android 首页和 iOS 设置页显示当前 VoWLAN / 云端状态；iOS 可依次验证 Push 凭据、AirSIM Relay 身份、设备注册和 AVF Agent 90 秒心跳。
 - **HyperOS 自动配置**：默认电话角色界面不可用时，可通过已授权 Shizuku 让 APK 自动完成系统角色设置。
 - **Android 通话音频桥**：通过 Shizuku `UserService` 和系统 `TYPE_TELEPHONY` 路由在内存中转发双向 PCM，不保存通话音频。
+- **VoBLE 蓝牙直连**（仅 AirSim-LDev）：具备以下内容，Lite 版因 Manifest 未声明对应服务与权限而不提供，详见[变体说明](#android-standalone-的两个变体)。
+- **云端 Relay**（仅 AirSim-LDev）：通过独立部署的 Cloudflare Worker、KV 与 Durable Objects 连接 Android 内置 Agent 和 Apple 客户端；Lite 版内置 Agent 只运行本地模式。
+- **云端模式与 iOS Relay 自检**（仅 AirSim-LDev）：iOS 可依次验证 Push 凭据、AirSIM Relay 身份、设备注册和 Agent 90 秒心跳。
 
 ## 系统架构
 
-推荐的 Standalone 架构在同一个 APK 中运行 Bridge 与 Agent：
+AirSim-LDev（完整版）在同一个 APK 中运行 Bridge 与 Agent，并支持三种传输：
 
 ```text
 iPhone / Apple Watch
         │  VoWLAN、VoBLE 或 Cloudflare Relay
         ▼
-Android AirSIM Standalone APK
+Android AirSim-LDev APK（完整版）
         ├─ 内置 Agent：身份、心跳、命令和媒体编排
+        ├─ Android Telecom / 短信
+        └─ Shizuku 通话 PCM 桥
+```
+
+AirSim-Lite-LDev（Lite 版）从同一份源码构建，只保留 VoWLAN 一条传输：
+
+```text
+iPhone / Apple Watch
+        │  VoWLAN（仅局域网 / 热点）
+        ▼
+Android AirSim-Lite-LDev APK
+        ├─ 内置 Agent：本地模式，不注册云端
         ├─ Android Telecom / 短信
         └─ Shizuku 通话 PCM 桥
 ```
 
 旧 AVF 架构继续保留用于兼容和回退，但不再是新安装的推荐路径。
 
-维护者当前使用 `https://airsim-push.remotepilot.site`，只允许 `com.eric3u.airsim`。DJOneHub 继续使用 `https://push.remotepilot.site`；两个域名背后是相互独立的 Worker、KV、Durable Objects 和 Dashboard token，禁止交叉复用。其他签名身份必须使用自己的域名、Cloudflare 资源和 APNs 凭据。
+每通电话在建立时选择传输路径，并在本次通话结束前保持同一路径，避免媒体和控制面在通话中途漂移。
 
-每通电话在建立时选择 VoWLAN 或 Relay，并在本次通话结束前保持同一传输路径，避免媒体和控制面在通话中途漂移。
+### VoBLE 蓝牙模式（仅 AirSim-LDev）
 
-### VoBLE 蓝牙模式
+> **Lite 版不提供此能力。** AirSim-Lite-LDev 的 Manifest 不声明 `VoBLEGatewayService`、不申请蓝牙权限，
+> `FeatureFlags.voBLEAvailable()` 返回 `false`，因此设置页不会显示蓝牙配对卡片、状态页不显示蓝牙诊断卡、
+> VoBLE 认证页也无法从任何路径打开。
 
-VoBLE 是与 VoWLAN、云端 Relay 并列的模式选项，不是现有 Wi-Fi 链路的必需组件。选择“蓝牙直连”后，iPhone 与 Android 使用一次性短码确认的临时密钥完成配对，控制消息和 G.711 μ-law 8 kHz 单声道音频均使用 AES-256-GCM 认证加密；通话期间绑定同一个 `call_id` 和 generation，避免重连后误操作另一通电话。短暂断链只允许在三秒内、同一通电话和同一 generation 上恢复。
+VoBLE 是与 VoWLAN、云端 Relay 并列的模式选项，不是 Wi-Fi 链路的必需组件。选择“蓝牙直连”后，iPhone 与 Android 使用一次性短码确认的临时密钥完成配对，控制消息和 G.711 μ-law 8 kHz 单声道音频均使用 AES-256-GCM 认证加密；通话期间绑定同一个 `call_id` 和 generation，避免重连后误操作另一通电话。短暂断链只允许在三秒内、同一通电话和同一 generation 上恢复。
 
 蓝牙模式只传送 AirSIM 控制与通话音频，**不会把 Android 的移动网络通过 Bluetooth PAN 共享给 iPhone**。需要上网时仍应单独使用 Android 热点、Wi-Fi 或 iPhone 自身蜂窝网络。iOS 端继续使用 CallKit 展示和管理通话，但本地蓝牙模式不需要 PushKit 或 Relay；App 被用户强制退出后，iOS 不保证 BLE 后台唤醒，来电前应重新打开 AirSIM。Apple Watch 可镜像 iPhone 的 CallKit 来电和控制状态，实际音频路由仍由 iPhone/watchOS 系统决定，并不是 Watch 直接连接 Android BLE。
 
 实现与验收边界见 [VoBLE 设计](docs/superpowers/specs/2026-10-12-voble-bluetooth-call-design.md) 和 [VoBLE 真机测试矩阵](docs/voble-real-device-test-matrix.md)。
 
+### 云端 Relay（仅 AirSim-LDev）
+
+维护者当前使用 `https://airsim-push.remotepilot.site`，只允许 `com.eric3u.airsim`。DJOneHub 继续使用 `https://push.remotepilot.site`；两个域名背后是相互独立的 Worker、KV、Durable Objects 和 Dashboard token，禁止交叉复用。其他签名身份必须使用自己的域名、Cloudflare 资源和 APNs 凭据。
+
+Lite 版不启用此通道：其 Manifest 没有 `com.airsim.phonecontrol.CLOUD_RELAY` meta-data，
+`FeatureFlags.cloudRelayAvailable()` 返回 `false`，内置 Agent 不执行设备注册、心跳或云命令轮询。
+
 ## 仓库结构
 
-| 目录 | 组件 | 主要职责 |
+| 目录 | 归属 | 主要职责 |
 | --- | --- | --- |
-| [`android-standalone`](android-standalone/README.md) | Android Standalone APK | 推荐入口；把 Agent、Telecom、短信、VoWLAN、Relay 和媒体编排合并为单一 APK |
-| [`android/phone-control-app`](android/phone-control-app/README.md) | 三星 Android 控制 App | 默认电话角色、Android Telecom、配对、短信、VoWLAN 与守护服务 |
-| [`android/phone-audio-bridge`](android/phone-audio-bridge/README.md) | 三星通话音频桥 | 通过 Shizuku 提供双向 PCM，并限制在 AVF 私网接口 |
-| [`module/module-agent`](module/module-agent/README.md) | Android AVF Agent | 控制 API、设备状态、Relay 心跳、命令与媒体编排 |
-| [`module/avf-installerd`](module/avf-installerd) | AVF 救援安装服务 | 校验签名 Debian 包、健康检查与失败回滚 |
-| [`module/packaging`](module/packaging/README.md) | AVF Debian 发布 | 构建单一 `arm64` 包、systemd 单元和首次安装脚本 |
-| [`iOS`](iOS/README.md) | iPhone / Apple Watch App | CallKit、PushKit、VoWLAN、短信、实时活动与通话媒体 |
-| [`push-relay-worker`](push-relay-worker/README.md) | Cloudflare Relay | 设备注册、APNs、云端命令、Dashboard 与公网媒体 |
-| [`docs`](docs) | 协议与设计文档 | VoWLAN / VoBLE 设计、三星热点配对协议与安全边界 |
+| [`android-standalone`](android-standalone/README.md) | ② 两个变体入口 | `AirSim-LDev/`（完整版）与 `AirSim-Lite-LDev/`（Lite 版）各自持有 Manifest，共用源码 |
+| [`android/phone-control-app`](android/phone-control-app/README.md) | ② 变体共用源码 | 默认电话角色、Android Telecom、配对、短信、VoWLAN 与守护服务 |
+| [`android/phone-audio-bridge`](android/phone-audio-bridge/README.md) | ② 变体共用源码 | 通过 Shizuku 提供双向 PCM，并限制在 AVF 私网接口 |
+| [`iOS`](iOS/README.md) | ③ AirChat iOS | CallKit、PushKit、VoWLAN、短信、实时活动与通话媒体 |
+| [`AirChat/Android`](AirChat/Android/README.md) | ④ 独立开发 | 配对安卓网关；拨号、短信、联系人、通话记录 |
+| [`AirChat/MacOS`](AirChat/MacOS/README.md) | ④ 独立开发 | 统一通信工作台：虚拟卡池、集群节点、外呼与短信中心 |
+| [`module/module-agent`](module/module-agent/README.md) | ① 上游 | AVF Agent：控制 API、设备状态、Relay 心跳、命令与媒体编排 |
+| [`module/avf-installerd`](module/avf-installerd) | ① 上游 | AVF 救援安装服务：校验签名 Debian 包、健康检查与失败回滚 |
+| [`module/packaging`](module/packaging/README.md) | ① 上游 | AVF Debian 发布：构建单一 `arm64` 包、systemd 单元和首次安装脚本 |
+| [`push-relay-worker`](push-relay-worker/README.md) | ① 上游 | Cloudflare Relay：设备注册、APNs、云端命令、Dashboard 与公网媒体 |
+| [`docs`](docs) | ① 上游 | 协议与设计文档：VoWLAN / VoBLE 设计、三星热点配对协议与安全边界 |
+
+> **关于 VoBLE 与 Relay 的文档归属**：`module/`、`push-relay-worker/` 与 `docs/` 下的 VoBLE、Relay 章节属于**上游 AirSIM** 的设计与实现记录。本 fork 的两个 Android 变体中，只有 **AirSim-LDev** 保留这些能力；**AirSim-Lite-LDev** 的 Manifest 不声明对应服务与权限，故不提供。阅读这些文档时请对照[变体能力表](#android-standalone-的两个变体)确认适用性。
 
 ## 快速开始
 
@@ -129,8 +212,13 @@ Redmi M2004J19C（Android 12）已保留数据安装修复包，用户确认 VoB
 ### 2. 构建 Android Standalone APK
 
 ```sh
-./android-standalone/test.sh
-./android-standalone/build.sh
+# 完整版（VoWLAN + VoBLE + 云端 Relay）
+./android-standalone/AirSim-LDev/test.sh
+./android-standalone/AirSim-LDev/build.sh
+
+# Lite 版（仅 VoWLAN）
+./android-standalone/AirSim-Lite-LDev/test.sh
+./android-standalone/AirSim-Lite-LDev/build.sh
 ```
 
 安装 APK 后，将 AirSIM Standalone 设为默认电话 App，启动 Shizuku 并向 AirSIM 授权。小米 HyperOS 无法显示系统角色选择页时，App 会在 Shizuku 授权后自动设置。完整步骤见 [Android Standalone 文档](android-standalone/README.md)。
@@ -168,7 +256,10 @@ open iOS/AirSIM.xcodeproj
 
 使用自己的 Apple Developer Team，为主 App、Watch App 和 Live Activity Extension 设置唯一 Bundle ID，并重新生成 provisioning profile。仓库中的 `com.example.airsim` 只是占位符，不能直接用于发布或 APNs。签名、CallKit、PushKit 与 APNs topic 的对应关系见 [iOS / watchOS 文档](iOS/README.md)。
 
-### 5. 可选：部署 Cloudflare Relay
+### 5. 可选：部署 Cloudflare Relay（仅 AirSim-LDev 变体需要）
+
+> **AirSim-Lite-LDev 不需要本节内容。** Lite 版不启用云端 Relay，其 Manifest 没有 `CLOUD_RELAY` meta-data，
+> 内置 Agent 只运行本地模式，因此无需部署 Worker、KV 或 Durable Objects，也不需要 APNs 凭据。
 
 维护者部署信息：
 
@@ -229,7 +320,8 @@ AirSIM 不附带原作者的 Apple Developer Team、App ID、证书或 provision
 ## 全项目验证
 
 ```sh
-./android-standalone/test.sh
+./android-standalone/AirSim-LDev/test.sh
+./android-standalone/AirSim-Lite-LDev/test.sh
 ./android/phone-control-app/test.sh
 ./android/phone-audio-bridge/build.sh
 ./android/phone-control-app/build.sh

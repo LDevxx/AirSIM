@@ -1,6 +1,8 @@
 # AirSIM 三星 Android 控制 App
 
-工作区候选构建为 `0.9.7.1 (86)`，尚未发布。Standalone 与 AVF Bridge 共享「设置 → 关于」：从实际安装 APK 读取版本号与 versionCode，可打开 GitHub 仓库和版本发布页；不依赖 Agent、Relay 或网络查询版本。
+本目录属于 **② AirSIM Lite** —— 基于**上游标准 Android 版**裁出的轻量版，仅保留 VoWLAN，已移除 VoBLE 与云端 Relay。当前版本 `AirSim-Lite V0.9.7.2 LDev 1`（`versionCode 91`）。Standalone 与 AVF Bridge 共享「设置 → 关于」：从实际安装 APK 读取版本号与 versionCode，可打开 GitHub 仓库和版本发布页；不依赖 Agent、Relay 或网络查询版本。
+
+Lite 版相对上游的改动：界面统一改为 AirChat 品牌文案，采用墨金／天蓝双主题与 SIM 卡图标；设置页与配对入口重构，配对与清除凭据集中在「设置 → 配对连接」；新增 DSDS 动态双卡卡槽探测、默认通话卡与默认短信卡选择；为 AirChat macOS 提供 `/api/v2/sims`、`/api/v2/cluster/events`、`/api/v2/calls/dial` 与 `/api/v2/ring_group/answer` 集群接口。已移除的 VoBLE 蓝牙栈与 Relay 云端客户端见下文历史记录。
 
 build 86 的本机通话静音只由已确认远程通话和就绪媒体触发，不再仅因默认 `remote_silent` 设置静音所有原生通话。链路失效或挂断恢复先前状态，蓝牙 PCM 中断主动释放所属会话，静音与恢复结果均记录到 VERBOSE TXT。[行为及验收边界](../../docs/remote-call-local-output-mute.md)。
 

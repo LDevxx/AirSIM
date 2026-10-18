@@ -1,5 +1,26 @@
 # AirSIM 全项目 Claude 部署辅助
 
+## 本仓库基线（四类内容，其中 ② 含两个变体）
+
+这是 [kai-wu-cortex/AirSIM](https://github.com/kai-wu-cortex/AirSIM) 的 fork，同时承载四类互不隶属的内容（② 含两个 Standalone 变体）。版本号、验收状态和责任边界必须分别表述，不得合并成一个项目：
+
+**① 上游 AirSIM** — 原作者 kai-wu-cortex。目录 `android/`、`iOS/`、`module/`、`push-relay-worker/`、`docs/`。上游发布 `v0.9.7.2 (91)`。不得改写上游版本号与发布说明。
+
+**② AirSIM Lite** — 本 fork 基于**上游 Android Standalone** 裁出的轻量版：仅保留 VoWLAN，移除 VoBLE 与云端 Relay。目录 `android-standalone/`、`android/phone-control-app/`、`android/phone-audio-bridge/`。版本 `AirSim-Lite V0.9.7.2 LDev 1`，`versionCode 91`，包名 `com.airsim.phonecontrol.standalone` / `com.airsim.phonecontrol`。
+
+**②b Android Standalone 的两个 fork 变体** — 各有独立目录，均在上游版本号后追加 `LDev <修改次数>`，**共用同一份源码**（`android/phone-control-app/src/`），能力差异只来自各自的 `AndroidManifest.xml`，运行时由 `FeatureFlags` 读取：
+
+- `android-standalone/AirSim-LDev/` — `V0.9.7.2 LDev 911`，VoWLAN + VoBLE + 云端 Relay；声明 `VoBLEGatewayService`、蓝牙权限与 `com.airsim.phonecontrol.CLOUD_RELAY=true`。
+- `android-standalone/AirSim-Lite-LDev/` — `AirSim-Lite V0.9.7.2 LDev 1`，仅 VoWLAN；同一份 Manifest 省略上述三项，于是 `FeatureFlags.voBLEAvailable()` 与 `cloudRelayAvailable()` 返回 false，蓝牙 UI 与 Relay 心跳自动关闭。
+
+两者 `versionCode` 同为 91、包名相同，无法共存或互相覆盖升级，切换需先卸载。`android-standalone/build.sh` 与 `test.sh` 保留为转发入口，默认 Lite；`AIRSIM_STANDALONE_VARIANT=full` 切到完整版。
+
+**③ AirChat iOS** — 本 fork 基于**上游 iOS** 改造的修改版。目录 `iOS/`（显示名 AirChat，`PRODUCT_NAME` 仍为 AirSIM）。版本 `V0.9.7.2 LDev 1`，`CURRENT_PROJECT_VERSION 92`，版本字段为 `project.pbxproj` 中的 `AIRSIM_LD_VERSION`。
+
+**④ AirChat Android / macOS** — 本 fork 作者的**独立开发版**，不基于上游代码。`AirChat/Android/`（`com.airsim.client`，`V0.2.0 LDev`，`versionCode 21`）与 `AirChat/MacOS/`（`V0.2.1 LDev`）。不得表述为上游 AirSIM 的发布内容。
+
+版本标识统一使用 `LDev`，旧写法 `LD-MOD` 已废弃。修改版本名时同步对应的 manifest／gradle／pbxproj 与 `android-standalone/test.sh` 断言；上游 Release 文档里的历史版本号属于归档事实，不得机械替换。
+
 工作区候选 build 85 的 Wi-Fi 返回恢复见 `docs/vowlan-network-return.md`：安卓网络变化重发 NSD 并隔离旧回调，iOS 有限次重新发现认证。固定云端不变、通话中不换链路、不新增 Relay 查询定时器。未安装／发布／锁屏真机验收，不承诺系统挂起或 OEM 强停后的即时恢复。
 
 工作区候选 build 84 的 iOS 本机短信删除、安卓身份约束音频 Watchdog 与 VERBOSE TXT 导出见 `docs/sms-deletion-audio-watchdog.md`。未安装或发布，不得将系统静音标志视为物理无声或真机验收。

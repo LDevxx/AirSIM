@@ -22,7 +22,7 @@ public class Call {
         state = value;
         for (Callback callback : callbacks) callback.onStateChanged(this, value);
     }
-    // 上游 v0.9.7.2 Details（方向/号码句柄）+ LD-MOD 保留的账户与扩展读取。
+    // 上游 v0.9.7.2 Details（方向/号码句柄）+ LDev 保留的账户与扩展读取。
     public static final class Details {
         public static final int DIRECTION_INCOMING = 0;
         public static final int DIRECTION_OUTGOING = 1;

@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.role.RoleManager;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -45,6 +47,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -118,20 +121,20 @@ public final class MainActivity extends Activity {
         agentRefreshColor = MUTED;
     }
 
-    /** 顶部主题色选择：读取当前强调色资源（LD-MOD：固定用海洋蓝，不再提供强调色选择）。 */
+    /** 顶部主题色选择：读取当前强调色资源（LDev：固定用海洋蓝，不再提供强调色选择）。 */
     private int accentColor(String key) {
         android.content.res.Resources res = getResources();
         boolean light = isLightTheme();
         return res.getColor(light ? R.color.airsim_theme_blue_light : R.color.airsim_theme_blue, getTheme());
     }
 
-    /** 当前主题明暗模式（LD-MOD）：dark=暗黑灰（默认），light=亮白蓝。 */
+    /** 当前主题明暗模式（LDev）：dark=暗黑灰（默认），light=亮白蓝。 */
     private boolean isLightTheme() {
         return "light".equals(getPreferences(MODE_PRIVATE).getString(THEME_MODE_KEY, "dark"));
     }
 
     private enum Page { STATUS, CALLS, DEBUG, SETTINGS }
-    private enum Feature { VOWLAN, AGENT, PCM, PAIRING, SHIZUKU }
+    private enum Feature { VOWLAN, AGENT, PCM, PUSH, SHIZUKU }
 
     private FrameLayout contentHost;
     private LinearLayout bottomBar;
@@ -175,6 +178,11 @@ public final class MainActivity extends Activity {
     private TextView pairingDeviceInfoView;
     private TextView pairingPortsView;
     private TextView pairingActionButton;
+    private TextView voBLEAuthenticationStatusView;
+    private TextView voBLEPairingCodeView;
+    private TextView voBLEDiagnosticsView;
+    private TextView voBLEClearCredentialButton;
+    private boolean voBLEAuthenticationVisible;
     private LinearLayout debugRows;
     private String lastRenderedDebugLog;
     private String lastRenderedDebugFilter;
@@ -192,6 +200,12 @@ public final class MainActivity extends Activity {
     private boolean realtimeLogging = true;
     private boolean agentOnline;
     private String agentDetail = "待检测";
+    private boolean pushConfigured;
+    private String pushDetail = "尚未检查";
+    private String pushDiagnostic = "尚未读取 Agent 的 Push 状态";
+	private boolean cloudEnabled;
+	private boolean cloudRelayConfigured;
+	private String cloudLastError = "";
 	private boolean avfStartupPromptShown;
 	private boolean crashPromptShown;
     private ShizukuStartupPolicy shizukuStartupPolicy;
@@ -215,6 +229,13 @@ public final class MainActivity extends Activity {
                 refreshDebugLog();
                 handler.postDelayed(this, 2_000);
             }
+        }
+    };
+    private final Runnable voBLEAuthenticationRefresh = new Runnable() {
+        @Override public void run() {
+            if (!voBLEAuthenticationVisible) return;
+            renderVoBLEAuthenticationStatus();
+            handler.postDelayed(this, 500);
         }
     };
 
@@ -253,6 +274,10 @@ public final class MainActivity extends Activity {
 				checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED,
 				checkSelfPermission(Manifest.permission.READ_PHONE_NUMBERS) == PackageManager.PERMISSION_GRANTED,
 				Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+						== PackageManager.PERMISSION_GRANTED,
+				Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+						== PackageManager.PERMISSION_GRANTED,
+				Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
 						== PackageManager.PERMISSION_GRANTED);
 		if (missingPermissions.length > 0) {
             requestPermissions(missingPermissions, 101);
@@ -265,6 +290,9 @@ public final class MainActivity extends Activity {
 			int requestCode, String[] permissions, int[] grantResults) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 		if (requestCode == 101) requestOptionalSMSPermission();
+		if (requestCode == 101 && hasVoBLEPermissions() && FeatureFlags.voBLEAvailable(this)) {
+			com.airsim.phonecontrol.voble.VoBLEGatewayService.start(this);
+		}
 		if (requestCode == OPTIONAL_SMS_REQUEST) {
 			startSMSInboxBaselineIfAuthorized();
 			continueStartupSetup();
@@ -289,6 +317,12 @@ public final class MainActivity extends Activity {
 		}
 		getPreferences(MODE_PRIVATE).edit().putBoolean(OPTIONAL_SMS_PROMPTED, true).apply();
 		requestPermissions(missing, OPTIONAL_SMS_REQUEST);
+	}
+
+	private boolean hasVoBLEPermissions() {
+		return Build.VERSION.SDK_INT < 31
+				|| (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+				&& checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED);
 	}
 
 	private void startSMSInboxBaselineIfAuthorized() {
@@ -418,6 +452,12 @@ public final class MainActivity extends Activity {
 
     private void showPage(Page page) {
         if (pcmStatusPoller != null) pcmStatusPoller.stop();
+        voBLEAuthenticationVisible = false;
+        handler.removeCallbacks(voBLEAuthenticationRefresh);
+        voBLEAuthenticationStatusView = null;
+        voBLEPairingCodeView = null;
+        voBLEDiagnosticsView = null;
+        voBLEClearCredentialButton = null;
         pcmHealthTile = null;
         currentPage = page;
         handler.removeCallbacks(debugRefresh);
@@ -471,7 +511,7 @@ public final class MainActivity extends Activity {
         };
     }
 
-    /** 次级页面（配对）不经过 showPage，需要手动同步应用栏标题并隐藏操作按钮。 */
+    /** 次级页面（配对、VoBLE 认证）不经过 showPage，需要手动同步应用栏标题并隐藏操作按钮。 */
     private void presentSubPage(String title) {
         if (appBarTitle != null) appBarTitle.setText(title);
         if (appBarTheme != null) appBarTheme.setVisibility(View.GONE);
@@ -514,13 +554,13 @@ public final class MainActivity extends Activity {
     private void confirmClearPairing() {
         new AlertDialog.Builder(this)
                 .setTitle("清除 AirChat 配对凭据？")
-                .setMessage("将删除已保存的 VoWLAN 本地认证密钥并断开等价的局域网配对；之后 AirChat 需要重新配对才能控制通话。")
+                .setMessage("将删除已保存的 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并停止后台中继服务；之后 AirChat 需要重新配对才能控制通话。")
                 .setPositiveButton("清除凭据", (dialog, which) -> clearPairingCredentials())
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    /** LD-MOD：强调色固定为海洋蓝，不再提供强调色预设；仅保留明暗主题切换。 */
+    /** LDev：强调色固定为海洋蓝，不再提供强调色预设；仅保留明暗主题切换。 */
 
     /** 顶部调色板按钮菜单：暗黑灰 / 亮白蓝 明暗主题切换。 */
     private void showThemeMenu(View anchor) {
@@ -677,12 +717,12 @@ public final class MainActivity extends Activity {
         portRow.addView(portInfo, weighted());
         card.addView(portRow, matchWithTop(10));
 
-        TextView guide = description("在 macOS 端、iOS 端和安卓端的 AirChat 设置中输入上方 IP 及端口，即可纯离线双向通话及收发短信。");
+        TextView guide = description("在 macOS 端、iOS 端和安卓端的 AirChat 设置中输入上方 IP 及端口，即可纯离线双向通话及收发短信，免 APNs / 云端 Relay。");
         card.addView(guide, matchWithTop(6));
 
         boolean hasPairing = hasStoredPairingCredentials();
         if (hasPairing) {
-            // LD-MOD：解除配对入口统一移到「设置 → 配对连接」，直连端点卡只读。
+            // LDev：解除配对入口统一移到「设置 → 配对连接」，直连端点卡只读。
         }
 
         return card;
@@ -795,7 +835,7 @@ public final class MainActivity extends Activity {
         root.addView(pageTitle("AirSIM", vName + " · 运行中"));
 
         boolean paired = VoWLANPairingStore.configured(this);
-        // LD-MOD：hero 区块 = AirChat 连接状态。未配对显示「AirChat 尚未连接」并点击进配对页；
+        // LDev：hero 区块 = AirChat 连接状态。未配对显示「AirChat 尚未连接」并点击进配对页；
         // 已配对则展示当前连接模式（原「当前连接模式」小区块合并至此，避免重复）。
         boolean ready = vowlanReady();
         LinearLayout hero = card(SURFACE_HIGH, 24);
@@ -814,9 +854,12 @@ public final class MainActivity extends Activity {
             heroCopy.addView(label("点击开始配对 · " + vowlanNetworkLine(), 14, MUTED, Gravity.START));
             hero.setOnClickListener(ignored -> openPairingPage());
         } else {
-            String connectionMode = MainScreenPresentation.connectionModeTitle(ready);
-            String connectionDetail = MainScreenPresentation.connectionModeDetail(ready);
-            int connectionColor = ready ? CYAN : WARNING;
+            String connectionMode = MainScreenPresentation.connectionModeTitle(
+                    ready, cloudEnabled, cloudRelayConfigured, cloudLastError);
+            String connectionDetail = MainScreenPresentation.connectionModeDetail(
+                    ready, cloudEnabled, cloudRelayConfigured, cloudLastError);
+            int connectionColor = ready ? CYAN
+                    : cloudEnabled && cloudRelayConfigured && cloudLastError.isEmpty() ? BLUE : WARNING;
             TextView heroTitle = label(connectionMode, 25, connectionColor, Gravity.START);
             heroTitle.setTypeface(Typeface.DEFAULT_BOLD);
             heroCopy.addView(heroTitle);
@@ -830,8 +873,19 @@ public final class MainActivity extends Activity {
         root.addView(iosDirectEndpointCard(), matchWithTop(14));
         root.addView(simSlotsCard(), matchWithTop(14));
 
-        // LD-MOD：原「当前连接模式」小区块已合并进顶部 AirChat 连接状态区块，不再重复渲染。
-        // AirSim-Lite：VoBLE 蓝牙区块已整体移除（仅保留 VoWLAN 局域网）。
+        // LDev：原「当前连接模式」小区块已合并进顶部 AirChat 连接状态区块，不再重复渲染。
+
+        // 蓝牙诊断卡只在 manifest 声明 VoBLE 时显示；Lite 变体没有这项能力。
+        if (FeatureFlags.voBLEAvailable(this)) {
+            LinearLayout bluetoothCard = card(SURFACE, 18);
+            bluetoothCard.setOrientation(LinearLayout.VERTICAL);
+            bluetoothCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+            bluetoothCard.addView(overline("蓝牙通话（诊断已脱敏）"));
+            bluetoothCard.addView(label(
+                    com.airsim.phonecontrol.voble.VoBLEGatewayService.diagnosticsSummary(),
+                    14, MUTED, Gravity.START), matchWithTop(5));
+            root.addView(bluetoothCard, matchWithTop(10));
+        }
 
         LinearLayout firstHealthRow = row();
         HealthTile agentTile = healthTile(
@@ -847,11 +901,11 @@ public final class MainActivity extends Activity {
         root.addView(firstHealthRow, matchWithTop(12));
 
         LinearLayout secondHealthRow = row();
-        HealthTile pairingTile = healthTile(
-                "AirChat 配对", paired ? "已配对" : "未配对",
-                android.R.drawable.ic_menu_myplaces, paired);
-        pairingTile.view.setOnClickListener(ignored -> showFeatureDetails(Feature.PAIRING));
-        secondHealthRow.addView(pairingTile.view, weightedWithEnd(5));
+        HealthTile pushTile = healthTile(
+                "Push / Relay", pushDetail,
+                android.R.drawable.stat_notify_sync, pushConfigured);
+        pushTile.view.setOnClickListener(ignored -> showFeatureDetails(Feature.PUSH));
+        secondHealthRow.addView(pushTile.view, weightedWithEnd(5));
         HealthTile shizukuTile = healthTile(
                 "Shizuku", shizukuReady() ? "已授权" : "待授权",
                 android.R.drawable.ic_lock_idle_lock, shizukuReady());
@@ -861,7 +915,7 @@ public final class MainActivity extends Activity {
 
         root.addView(modeSelector(), matchWithTop(14));
 
-        // LD-MOD：状态页只展示状态；配对入口统一移到「设置 → 配对连接」。
+        // LDev：状态页只展示状态；配对入口统一移到「设置 → 配对连接」。
         // 原状态页的「重新配对 AirChat / 解除配对」按钮已迁移至设置页配对分组。
 
         root.addView(sectionTitle("最近活动"), matchWithTop(22));
@@ -888,7 +942,7 @@ public final class MainActivity extends Activity {
     private View callsPage() {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
-        root.addView(description("Telecom 本机控制；AirChat 通话走 VoWLAN 局域网直连（AirSim-Lite 已移除蓝牙与云端中继）。"), matchWithTop(8));
+        root.addView(description("Telecom 本机控制；AirChat 通话优先使用 VoWLAN/Tailscale，局域网不可用时由云端中继。"), matchWithTop(8));
 
         LinearLayout dialCard = card(SURFACE, 24);
         dialCard.setOrientation(LinearLayout.VERTICAL);
@@ -1123,9 +1177,8 @@ public final class MainActivity extends Activity {
     private View settingsPage() {
         LinearLayout root = pageRoot();
         // 页面标题由顶部应用栏承载，页内不再重复渲染大标题。
-        // LD-MOD：「配对连接」「外观」分组已去除（与溢出菜单/调色板按钮重复）；
-        // 配对入口 = AirChat 配对凭证卡片；主题切换 = 顶部调色板按钮。
-        // AirSim-Lite：VoBLE 蓝牙配对分组已移除。
+        // LDev：「配对连接」「外观」分组已去除（与溢出菜单/调色板按钮重复）；
+        // 配对入口 = AirChat 配对凭证卡片 + VoBLE 蓝牙配对卡片；主题切换 = 顶部调色板按钮。
 
         boolean standaloneRuntime = RuntimeMode.isStandalone(this);
 
@@ -1134,23 +1187,55 @@ public final class MainActivity extends Activity {
         pairingCredentialCard.setOrientation(LinearLayout.VERTICAL);
         pairingCredentialCard.setPadding(dp(16), dp(16), dp(16), dp(16));
         boolean hasPairing = hasStoredPairingCredentials();
-        pairingCredentialCard.addView(label(hasPairing ? "已保存 AirChat 配对凭据（VoWLAN 本地直连）" : "尚未保存配对凭据",
+        pairingCredentialCard.addView(label(hasPairing ? "已保存 AirChat 配对凭据（VoWLAN 与 Relay）" : "尚未保存配对凭据",
                 14, hasPairing ? PRIMARY : MUTED, Gravity.START));
-        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥并断开局域网配对；AirChat 需要重新配对才能呼叫。"),
+        pairingCredentialCard.addView(description("清除后将删除 VoWLAN 本地认证密钥与云端 Relay 注册凭据，并断开中继连接；AirChat 需要重新配对才能呼叫。"),
                 matchWithTop(6));
-        // LD-MOD：清除凭据 = 红底白字实心按钮。
+        // LDev：清除凭据 = 红底白字实心按钮。
         TextView clearPairingBtn = dangerButton("清除 AirChat 配对凭据");
         clearPairingBtn.setEnabled(hasPairing);
-        // LD-MOD：清除按钮统一纯红底；禁用仅拦截点击，不做半透明淡化。
+        // LDev：清除按钮统一纯红底；禁用仅拦截点击，不做半透明淡化。
         clearPairingBtn.setOnClickListener(ignored -> confirmClearPairing());
         pairingCredentialCard.addView(clearPairingBtn, matchWithTop(10));
-        // LD-MOD：新增重新配对入口（原状态页「配对 AirChat」按钮迁移至此）。
+        // LDev：新增重新配对入口（原状态页「配对 AirChat」按钮迁移至此）。
         TextView rePairBtn = primaryButton("重新配对 AirChat", BLUE);
         rePairBtn.setOnClickListener(ignored -> openPairingPage());
         pairingCredentialCard.addView(rePairBtn, matchWithTop(10));
         root.addView(pairingCredentialCard, matchWithTop(10));
 
-        // LD-MOD：内置 Agent 区块。
+        // 能力探测：Lite 变体的 manifest 不声明 VoBLE 服务，因此整块蓝牙 UI 必须隐藏，
+        // 而不是显示一个点了就报错的入口。两种变体共用同一份源码。
+        if (FeatureFlags.voBLEAvailable(this)) {
+            root.addView(sectionTitle("VoBLE 蓝牙配对"), matchWithTop(22));
+            LinearLayout voBLECard = card(SURFACE, 22);
+            voBLECard.setOrientation(LinearLayout.VERTICAL);
+            voBLECard.setPadding(dp(16), dp(16), dp(16), dp(16));
+            boolean voBLEPaired = com.airsim.phonecontrol.voble.VoBLEGatewayService
+                    .hasStoredCredential(this);
+            voBLECard.addView(label(voBLEPaired ? "已保存 AirChat 认证凭据" : "尚未保存认证凭据",
+                    14, voBLEPaired ? PRIMARY : MUTED, Gravity.START));
+            voBLECard.addView(description("管理六位安全码认证、旧凭据恢复与双端取消配对。"),
+                    matchWithTop(6));
+            // LDev：打开 VoBLE 配置 = 蓝底白字；清除 VoBLE 凭据 = 红底白字。
+            TextView configureVoBLE = primaryButton("打开 VoBLE 配对配置", BLUE);
+            configureVoBLE.setOnClickListener(ignored -> openVoBLEAuthenticationPage());
+            voBLECard.addView(configureVoBLE, matchWithTop(10));
+            TextView clearVoBLEBtn = dangerButton("清除 VoBLE 配对凭据");
+            clearVoBLEBtn.setEnabled(voBLEPaired);
+            clearVoBLEBtn.setOnClickListener(ignored -> new AlertDialog.Builder(this)
+                    .setTitle("清除旧的 VoBLE 配对？")
+                    .setMessage("仅删除蓝牙认证密钥并结束当前 VoBLE 会话；不会清除 VoWLAN、Relay 或通话记录。")
+                    .setPositiveButton("清除并重新配对", (dialog, which) -> {
+                        com.airsim.phonecontrol.voble.VoBLEGatewayService.clearStoredCredential(this);
+                        toast("VoBLE 旧凭据已清除");
+                    })
+                    .setNegativeButton("取消", null)
+                    .show());
+            voBLECard.addView(clearVoBLEBtn, matchWithTop(10));
+            root.addView(voBLECard, matchWithTop(10));
+        }
+
+        // LDev：内置 Agent 区块下移至 VoBLE 蓝牙配对之后。
         root.addView(sectionTitle(RuntimeMode.agentLabel(this)), matchWithTop(22));
         LinearLayout agentCard = card(SURFACE, 22);
         agentCard.setOrientation(LinearLayout.VERTICAL);
@@ -1310,7 +1395,7 @@ public final class MainActivity extends Activity {
         aboutCard.addView(releases, matchWithTop(10));
         root.addView(aboutCard, matchWithTop(10));
 
-        // 上游 v0.9.7.2 的“关于”区块（AppInformation 版本与仓库链接）已由 LD-MOD
+        // 上游 v0.9.7.2 的“关于”区块（AppInformation 版本与仓库链接）已由 LDev
         // 版本卡与 Releases 按钮承载，不再重复渲染。
         refreshShizukuStatus();
         return scroll(root);
@@ -1359,6 +1444,7 @@ public final class MainActivity extends Activity {
         info.append("屏幕：").append(metrics.widthPixels).append('x').append(metrics.heightPixels)
                 .append(" @").append(metrics.densityDpi).append("dpi\n");
         appendWifiCapability(info);
+        appendBluetoothCapability(info);
         info.append("电话角色：").append(dialerRoleHeld() ? "已启用" : "未启用").append('\n');
         info.append("Shizuku：").append(shizukuReady() ? "已授权" : "未授权").append('\n');
         return info.toString();
@@ -1412,6 +1498,40 @@ public final class MainActivity extends Activity {
     }
 
     /** 蓝牙状态与 LE 能力（2M PHY / Coded PHY / 扩展广播均属 BT5 特性）。 */
+    private void appendBluetoothCapability(StringBuilder info) {
+        info.append("蓝牙：");
+        try {
+            BluetoothManager manager = getSystemService(BluetoothManager.class);
+            BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
+            if (adapter == null) {
+                info.append("本机无蓝牙\n");
+                return;
+            }
+            StringBuilder caps = new StringBuilder(adapter.isEnabled() ? "已开启" : "已关闭");
+            caps.append(" · BLE ")
+                    .append(getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)
+                            ? "支持" : "不支持");
+            boolean connectGranted = Build.VERSION.SDK_INT < 31
+                    || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (connectGranted) {
+                try {
+                    if (adapter.isLe2MPhySupported()) caps.append(" · LE 2M PHY (BT5+)");
+                } catch (Exception ignored) { }
+                try {
+                    if (adapter.isLeCodedPhySupported()) caps.append(" · LE Coded PHY (远距)");
+                } catch (Exception ignored) { }
+                try {
+                    if (adapter.isLeExtendedAdvertisingSupported()) caps.append(" · LE 扩展广播");
+                } catch (Exception ignored) { }
+            } else {
+                caps.append(" · 能力详情需授权 BLUETOOTH_CONNECT");
+            }
+            info.append(caps).append('\n');
+        } catch (Exception error) {
+            info.append("不可读（").append(error.getClass().getSimpleName()).append("）\n");
+        }
+    }
 
     private boolean hasStoredPairingCredentials() {
         if (VoWLANPairingStore.configured(this)) return true;
@@ -1439,12 +1559,138 @@ public final class MainActivity extends Activity {
 
     private void openPairingPage() {
         handler.removeCallbacks(debugRefresh);
+        voBLEAuthenticationVisible = false;
+        handler.removeCallbacks(voBLEAuthenticationRefresh);
         bottomBar.setVisibility(View.GONE);
         presentSubPage("AirChat 配对");
         contentHost.removeAllViews();
         contentHost.addView(pairingPage(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         startPairing();
+    }
+
+    private void openVoBLEAuthenticationPage() {
+        // 防御：Lite 变体没有 VoBLE 服务声明，入口不应从任何路径打开该页面。
+        if (!FeatureFlags.voBLEAvailable(this)) return;
+        handler.removeCallbacks(debugRefresh);
+        handler.removeCallbacks(voBLEAuthenticationRefresh);
+        voBLEAuthenticationVisible = true;
+        bottomBar.setVisibility(View.GONE);
+        presentSubPage("VoBLE 蓝牙配对");
+        contentHost.removeAllViews();
+        contentHost.addView(voBLEAuthenticationPage(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        handler.post(voBLEAuthenticationRefresh);
+    }
+
+    private View voBLEAuthenticationPage() {
+        LinearLayout root = pageRoot();
+        TextView back = label("‹", 40, TEXT, Gravity.START);
+        back.setContentDescription("返回设置");
+        back.setOnClickListener(ignored -> {
+            bottomBar.setVisibility(View.VISIBLE);
+            showPage(Page.SETTINGS);
+        });
+        root.addView(back, new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+        TextView title = label("VoBLE 蓝牙配对", 30, TEXT, Gravity.START);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(title, matchWithTop(8));
+        root.addView(description("蓝牙是独立连接模式；认证凭据不会影响 VoWLAN 或云端 Relay。"),
+                matchWithTop(6));
+
+        boolean permissions = hasVoBLEPermissions();
+        boolean paired = com.airsim.phonecontrol.voble.VoBLEGatewayService
+                .hasStoredCredential(this);
+        LinearLayout statusCard = card(SURFACE, 22);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        statusCard.addView(overline("认证状态"));
+        voBLEAuthenticationStatusView = label(
+                MainScreenPresentation.voBLEAuthenticationStatus(
+                        paired,
+                        com.airsim.phonecontrol.voble.VoBLEGatewayService.isAuthenticated(),
+                        com.airsim.phonecontrol.voble.VoBLEGatewayService.pendingPairingCode()),
+                19, paired ? PRIMARY : WARNING, Gravity.START);
+        statusCard.addView(voBLEAuthenticationStatusView, matchWithTop(7));
+        statusCard.addView(label(permissions ? "蓝牙权限：已授权" : "蓝牙权限：需要授权",
+                13, permissions ? MUTED : WARNING, Gravity.START), matchWithTop(7));
+        voBLEDiagnosticsView = label(
+                com.airsim.phonecontrol.voble.VoBLEGatewayService.diagnosticsSummary(),
+                13, MUTED, Gravity.START);
+        statusCard.addView(voBLEDiagnosticsView, matchWithTop(7));
+        statusCard.addView(overline("六位安全码"), matchWithTop(18));
+        voBLEPairingCodeView = label(
+                MainScreenPresentation.voBLEPairingCode(
+                        com.airsim.phonecontrol.voble.VoBLEGatewayService.pendingPairingCode()),
+                28, MUTED, Gravity.CENTER);
+        voBLEPairingCodeView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        statusCard.addView(voBLEPairingCodeView, matchWithTop(8));
+        root.addView(statusCard, matchWithTop(18));
+
+        LinearLayout flowCard = card(SURFACE, 22);
+        flowCard.setOrientation(LinearLayout.VERTICAL);
+        flowCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        flowCard.addView(overline("认证流程"));
+        flowCard.addView(label("1. AirChat 扫描并连接此 Android Agent\n"
+                        + "2. 两端核对同一组六位安全码\n"
+                        + "3. 确认后保存应用层密钥并开放拨号与 PCM 音频",
+                14, TEXT, Gravity.START), matchWithTop(8));
+        flowCard.addView(description("如果 AirChat 显示 already paired 或认证失败，表示两端旧密钥不一致。"
+                + "请在此页清除旧凭据，再回到 AirChat 重新配对。"), matchWithTop(10));
+        root.addView(flowCard, matchWithTop(12));
+
+        TextView restart = secondaryButton("重启 VoBLE 服务");
+        restart.setOnClickListener(ignored -> {
+            com.airsim.phonecontrol.voble.VoBLEGatewayService.start(this);
+            toast("VoBLE 服务已启动");
+            openVoBLEAuthenticationPage();
+        });
+        root.addView(restart, matchWithTop(16));
+
+        voBLEClearCredentialButton = secondaryButton("清除 VoBLE 配对凭据");
+        voBLEClearCredentialButton.setTextColor(paired ? DANGER : MUTED);
+        voBLEClearCredentialButton.setEnabled(paired);
+        voBLEClearCredentialButton.setOnClickListener(ignored -> new AlertDialog.Builder(this)
+                .setTitle("清除旧的 VoBLE 配对？")
+                .setMessage("仅删除蓝牙认证密钥并结束当前 VoBLE 会话；不会清除 VoWLAN、Relay 或通话记录。")
+                .setPositiveButton("清除并重新配对", (dialog, which) -> {
+                    com.airsim.phonecontrol.voble.VoBLEGatewayService.clearStoredCredential(this);
+                    handler.postDelayed(() -> {
+                        toast("VoBLE 旧凭据已清除");
+                        openVoBLEAuthenticationPage();
+                    }, 150);
+                })
+                .setNegativeButton("取消", null)
+                .show());
+        root.addView(voBLEClearCredentialButton, matchWithTop(10));
+        return scroll(root);
+    }
+
+    private void renderVoBLEAuthenticationStatus() {
+        boolean stored = com.airsim.phonecontrol.voble.VoBLEGatewayService
+                .hasStoredCredential(this);
+        boolean authenticated = com.airsim.phonecontrol.voble.VoBLEGatewayService.isAuthenticated();
+        String pairingCode = com.airsim.phonecontrol.voble.VoBLEGatewayService.pendingPairingCode();
+        if (voBLEAuthenticationStatusView != null) {
+            voBLEAuthenticationStatusView.setText(MainScreenPresentation.voBLEAuthenticationStatus(
+                    stored, authenticated, pairingCode));
+            voBLEAuthenticationStatusView.setTextColor(
+                    authenticated || stored ? PRIMARY : WARNING);
+        }
+        if (voBLEPairingCodeView != null) {
+            String formatted = MainScreenPresentation.formatPairingCode(pairingCode);
+            voBLEPairingCodeView.setText(MainScreenPresentation.voBLEPairingCode(pairingCode));
+            voBLEPairingCodeView.setTextColor("--- ---".equals(formatted) ? MUTED : PRIMARY);
+        }
+        if (voBLEDiagnosticsView != null) {
+            voBLEDiagnosticsView.setText(
+                    com.airsim.phonecontrol.voble.VoBLEGatewayService.diagnosticsSummary());
+        }
+        if (voBLEClearCredentialButton != null) {
+            voBLEClearCredentialButton.setEnabled(stored);
+            voBLEClearCredentialButton.setTextColor(stored ? DANGER : MUTED);
+        }
     }
 
     private View pairingPage() {
@@ -1901,12 +2147,39 @@ public final class MainActivity extends Activity {
                             healthy ? PRIMARY : WARNING);
                     updateVisibleStatus();
                 });
+                try {
+                    JSONObject pushStatus = new JSONObject(client.pushStatus());
+                    runOnUiThread(() -> {
+                        if (generation != agentRefreshGeneration) return;
+                        updatePushStatus(pushStatus);
+                        updateVisibleStatus();
+                    });
+                } catch (Exception error) {
+                    BridgeLog.error("push_status_refresh_failed endpoint=" + address, error);
+                    String pushError = error.getClass().getSimpleName() + " · " + error.getMessage();
+                    runOnUiThread(() -> {
+                        if (generation != agentRefreshGeneration) return;
+                        pushConfigured = false;
+                        pushDetail = "状态不可读";
+                        cloudRelayConfigured = false;
+                        cloudLastError = DebugRedactor.sanitize(pushError);
+                        pushDiagnostic = "读取 /api/push/status 失败："
+                                + DebugRedactor.sanitize(pushError);
+                        updateVisibleStatus();
+                    });
+                }
             } catch (Exception error) {
                 BridgeLog.error("agent_status_refresh_failed path=" + path + " endpoint=" + address, error);
                 runOnUiThread(() -> {
                     if (generation != agentRefreshGeneration) return;
                     agentOnline = false;
                     agentDetail = "离线 · " + error.getClass().getSimpleName();
+                    pushConfigured = false;
+                    pushDetail = "Agent 不可达";
+                    cloudRelayConfigured = false;
+                    cloudLastError = RuntimeMode.agentLabel(this) + "不可达";
+                    pushDiagnostic = "先恢复" + RuntimeMode.agentLabel(this)
+                            + "；当前无法查询 /api/push/status。";
                     if (showResult) setAgentRefreshMessage("刷新失败 · GET " + path
                             + "\nAgent：" + address + "\n原因："
                             + DebugRedactor.sanitize(error.getClass().getSimpleName() + " · "
@@ -1926,6 +2199,27 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void updatePushStatus(JSONObject result) {
+        boolean enabled = result.optBoolean("cloud_enabled", false);
+        boolean calls = result.optBoolean("call_push_ready", false);
+        boolean messages = result.optBoolean("message_push_ready", false);
+        String relay = result.optString("relay_url", "");
+        String lastError = result.optString("last_error", "");
+        cloudEnabled = enabled;
+        cloudRelayConfigured = enabled && result.optBoolean("configured", false) && !relay.isEmpty();
+        cloudLastError = DebugRedactor.sanitize(lastError);
+        pushConfigured = enabled && calls && messages;
+        pushDetail = !enabled ? "云端已关闭" : pushConfigured ? "推送已配置" : "配置不完整";
+        pushDiagnostic = "云端开关：" + (enabled ? "开启" : "关闭")
+                + "\n来电 Push：" + (calls ? "已配置" : "未就绪")
+                + " · 短信 Push：" + (messages ? "已配置" : "未就绪")
+                + "\nRelay：" + (relay.isEmpty() ? "未配置" : relay)
+                + "\nAPNs 环境：" + result.optString("environment", "未知")
+                + " · WAN：" + result.optString("wan_interface", "未检测到")
+                + (lastError.isEmpty() ? "" : "\n最近错误：" + DebugRedactor.sanitize(lastError))
+                + "\n注意：已配置不等于公网 Relay 已验证可达。";
+    }
+
     private void showFeatureDetails(Feature feature) {
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(featureTitle(feature))
@@ -1934,13 +2228,32 @@ public final class MainActivity extends Activity {
                 .setNeutralButton("重新检查", (ignored, which) -> showFeatureDetails(feature))
                 .create();
         dialog.show();
-        if (feature != Feature.AGENT) return;
+        if (feature != Feature.AGENT && feature != Feature.PUSH) return;
         Executors.newSingleThreadExecutor().execute(() -> {
             String live;
             try {
                 AgentClient client = new AgentClient(this);
-                JSONObject result = new JSONObject(
-                        AppConfig.configured(this) ? client.status() : client.health());
+                JSONObject result = new JSONObject(feature == Feature.PUSH
+                        ? client.pushStatus()
+                        : AppConfig.configured(this) ? client.status() : client.health());
+                if (feature == Feature.PUSH) {
+                    String cloudLogs;
+                    try {
+                        cloudLogs = cloudAgentLogs(new JSONObject(client.debugSnapshot()));
+                    } catch (Exception error) {
+                        cloudLogs = "Agent 云端事件读取失败：" + DebugRedactor.sanitize(
+                                error.getClass().getSimpleName() + " · " + error.getMessage());
+                    }
+                    String liveCloudLogs = cloudLogs;
+                    runOnUiThread(() -> {
+                        updatePushStatus(result);
+                        updateVisibleStatus();
+                        if (dialog.isShowing()) dialog.setMessage(featureDetails(feature,
+                                "实时查询：/api/push/status · HTTP 200\n\nAgent 云端事件（新到旧）\n"
+                                        + liveCloudLogs));
+                    });
+                    return;
+                }
                 live = "实时查询：" + (AppConfig.configured(this) ? "/api/android/status" : "/api/health")
                         + " · HTTP 200\n返回：ok=" + result.optBoolean("ok", false)
                         + " · runtime_profile=" + result.optString("runtime_profile", "未知")
@@ -1959,12 +2272,35 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private String cloudAgentLogs(JSONObject snapshot) {
+        JSONArray events = snapshot.optJSONArray("events");
+        if (events == null) return "Agent 未返回事件列表";
+        StringBuilder output = new StringBuilder();
+        int count = 0;
+        for (int index = events.length() - 1; index >= 0 && count < 10; index--) {
+            JSONObject event = events.optJSONObject(index);
+            if (event == null) continue;
+            String category = event.optString("category", "");
+            if (!category.equals("push") && !category.startsWith("cloud")) continue;
+            if (output.length() > 0) output.append('\n');
+            output.append(DebugRedactor.sanitize(event.optString("timestamp", "")))
+                    .append(" · ").append(category)
+                    .append(" · ").append(DebugRedactor.sanitize(event.optString("summary", "")));
+            String payload = event.optString("payload", "");
+            if (!payload.isEmpty()) output.append("\n  ").append(
+                    payload.contains("://") ? "[可能包含媒体凭据，链接详情已省略]"
+                            : DebugRedactor.sanitize(payload));
+            count++;
+        }
+        return output.length() == 0 ? "暂无 Push / Cloud 事件" : output.toString();
+    }
+
     private String featureTitle(Feature feature) {
         return switch (feature) {
             case VOWLAN -> "VoWLAN 连接详情";
             case AGENT -> RuntimeMode.agentLabel(this) + " 详情";
             case PCM -> "PCM 音频桥详情";
-            case PAIRING -> "AirChat 配对详情";
+            case PUSH -> "Push / Relay 详情";
             case SHIZUKU -> "Shizuku 详情";
         };
     }
@@ -2019,16 +2355,11 @@ public final class MainActivity extends Activity {
                         + "\n最近 VoWLAN 检查：" + (latestVoWLAN.isEmpty() ? "无" : latestVoWLAN);
                 keywords = new String[]{"pcm", "shizuku", "vowlan_state"};
             }
-            case PAIRING -> {
-                boolean paired = VoWLANPairingStore.configured(this);
-                String address = localVoWLANAddress();
-                details = "状态：" + (paired ? "已保存 AirChat 配对凭据" : "尚未配对")
-                        + "\n本机局域网：" + (address.isEmpty() ? "未发现" : address)
-                        + "\n控制端口：" + VoWLANGatewayService.activeControlPort()
-                        + " · 音频端口：" + VoWLANGatewayService.activePcmPort()
-                        + "\n说明：AirSim-Lite 仅支持 VoWLAN 局域网直连，已移除蓝牙与云端 Relay。"
-                        + "\n原因：" + (paired ? "配对密钥已加密保存在本机" : "点按顶部连接状态区或设置页的配对卡片发起配对");
-                keywords = new String[]{"pairing", "vowlan"};
+            case PUSH -> {
+                details = "状态：" + pushDetail + "\n" + pushDiagnostic
+                        + "\n原因：" + (agentOnline ? "请核对开关、Relay 地址、APNs token 与最近错误"
+                            : "Agent 不可达时无法确认云端注册或心跳");
+                keywords = new String[]{"push", "relay", "pairing"};
             }
             case SHIZUKU -> {
                 String shizuku = ShizukuBridgeManager.get(this).status();
@@ -2205,6 +2536,13 @@ public final class MainActivity extends Activity {
 
             @Override public void onSucceeded(String clientDeviceName, String agentResponse) {
                 BridgeLog.info("pairing_completed client=" + clientDeviceName);
+                boolean localMode = false;
+                try {
+                    localMode = new JSONObject(agentResponse).optBoolean("local_mode", false);
+                } catch (Exception ignored) {
+                    // Older Agent responses do not carry a mode marker.
+                }
+                boolean pairedLocally = localMode;
                 int controlPort = VoWLANGatewayService.activeControlPort();
                 int pcmPort = VoWLANGatewayService.activePcmPort();
                 runOnUiThread(() -> {
@@ -2221,7 +2559,7 @@ public final class MainActivity extends Activity {
                         pairingStatus.setText("已成功配对接入设备：" + clientDeviceName
                                 + "\n支持协议: LD 2.0 / 1.0 双兼容"
                                 + "\n控制端口: " + controlPort + " · 音频端口: " + pcmPort
-                                + "\n(本地 VoWLAN 直连模式，免 APNs / 云端 Relay)");
+                                + (pairedLocally ? "\n(本地直连模式，免 APNs / Relay)" : "\n(已配置云端 Push)"));
                     }
                     if (pairingActionButton != null) {
                         pairingActionButton.setText("完成并返回");
@@ -2497,7 +2835,7 @@ public final class MainActivity extends Activity {
         return title;
     }
 
-    /** iOS 风格设置分组行：标题 + 副标题，整行可点，带涟漪反馈（LD-MOD 配对/外观分组用）。 */
+    /** iOS 风格设置分组行：标题 + 副标题，整行可点，带涟漪反馈（LDev 配对/外观分组用）。 */
     private TextView settingsNavRow(String title, String subtitle, int titleColor) {
         TextView rowView = new TextView(this);
         rowView.setText(title + "\n" + subtitle);
@@ -2568,7 +2906,7 @@ public final class MainActivity extends Activity {
         return button;
     }
 
-    /** 红底白字危险操作按钮（LD-MOD）：清除凭据等破坏性操作统一使用。 */
+    /** 红底白字危险操作按钮（LDev）：清除凭据等破坏性操作统一使用。 */
     private TextView dangerButton(String title) {
         TextView button = label(title, 14, Color.WHITE, Gravity.CENTER);
         button.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2669,11 +3007,13 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
-        if (startupSetupPending) scheduleStartupSetup();
-        if (currentPage == Page.SETTINGS && bottomBar.getVisibility() == View.VISIBLE) {
-            showPage(Page.SETTINGS);
+        if (hasVoBLEPermissions()) {
+            com.airsim.phonecontrol.voble.VoBLEGatewayService.start(this);
         }
+        if (startupSetupPending) scheduleStartupSetup();
+        if (currentPage == Page.SETTINGS && !voBLEAuthenticationVisible) showPage(Page.SETTINGS);
         if (currentPage == Page.STATUS && pcmStatusPoller != null) pcmStatusPoller.start();
+        if (voBLEAuthenticationVisible) handler.post(voBLEAuthenticationRefresh);
         refreshShizukuStatus();
 		startSMSInboxBaselineIfAuthorized();
         if (startupSetupCompleted && !startupSetupPending && !startupSetupInFlight) {
@@ -2684,6 +3024,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() {
         resumed = false;
         if (pcmStatusPoller != null) pcmStatusPoller.stop();
+        handler.removeCallbacks(voBLEAuthenticationRefresh);
         super.onPause();
     }
 
@@ -2708,6 +3049,7 @@ public final class MainActivity extends Activity {
         }
         if (pcmStatusPoller != null) pcmStatusPoller.stop();
         handler.removeCallbacks(debugRefresh);
+        handler.removeCallbacks(voBLEAuthenticationRefresh);
         stopPairingServer();
         super.onDestroy();
     }
