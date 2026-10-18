@@ -52,11 +52,13 @@ Lite 版不声明 `VoBLEGatewayService`、蓝牙权限与 `CLOUD_RELAY` meta-dat
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-7c3aed)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/kai-wu-cortex/AirSIM?style=flat&logo=github&label=Stars)](https://github.com/kai-wu-cortex/AirSIM/stargazers)
 
-**AirSIM 是一个以 Android 手机为蜂窝通信终端，让 iPhone 和 Apple Watch 远程拨打、接听电话与收发短信的源码可见跨设备通信项目。** 推荐的 Android Standalone APK 在同一前台服务中完成 Android Telecom、短信、设备身份、Relay 心跳、云端命令和媒体编排，不需要 AVF Linux、Terminal、Debian、`8575/8576` 或 `airsim-installerd`；Apple 客户端使用 CallKit、PushKit、ActivityKit 和 VoWLAN，可选的 Cloudflare Workers Relay 提供公网事件、APNs 推送、命令队列与媒体中继。
+**AirSIM 是一个以 Android 手机为蜂窝通信终端，让 iPhone 和 Apple Watch 远程拨打、接听电话与收发短信的源码可见跨设备通信项目。** 推荐的 Android Standalone APK 在同一前台服务中完成 Android Telecom、短信、设备身份与媒体编排，不需要 AVF Linux、Terminal、Debian、`8575/8576` 或 `airsim-installerd`；Apple 客户端使用 CallKit、PushKit、ActivityKit 和 VoWLAN。
+
+本 fork 提供两个 Android 变体：**AirSim-LDev** 额外保留 VoBLE 蓝牙与可选的 Cloudflare Relay；**AirSim-Lite-LDev** 只保留局域网 VoWLAN。两者共用源码，能力差异由各自 Manifest 决定，详见[变体说明](#android-standalone-的两个变体)。
 
 AirSIM is a source-available, noncommercial cross-device calling and messaging project that connects Samsung Android, iPhone, Apple Watch, Android AVF Linux, CallKit, PushKit, VoWLAN, APNs, and Cloudflare Workers.
 
-> 本仓库包含完整源码、构建脚本与部署文档，不提供可复用的 Apple Developer 身份、生产 APNs 密钥或 Cloudflare 账户资源。维护者部署了仅供自身签名构建测试的 AirSIM Relay，但它不是面向第三方 Bundle ID 的公共托管服务，也不提供可用性承诺；重新签名的使用者必须自行部署 Relay。项目不能替代紧急呼叫能力，生产使用前必须完成目标三星手机、iPhone 和 Apple Watch 的联合验收。
+> 本仓库包含完整源码、构建脚本与部署文档，不提供可复用的 Apple Developer 身份、生产 APNs 密钥或 Cloudflare 账户资源。维护者部署了仅供自身签名构建测试的 AirSIM Relay，但它不是面向第三方 Bundle ID 的公共托管服务，也不提供可用性承诺；重新签名的使用者若需要云端模式（仅 AirSim-LDev），必须自行部署 Relay。项目不能替代紧急呼叫能力，生产使用前必须完成目标三星手机、iPhone 和 Apple Watch 的联合验收。
 
 > [!IMPORTANT]
 > 本项目面向个人学习、研究、实验和其他非商业用途。任何商业使用、收费服务、商业产品集成或预期商业应用均未获授权；如需商业许可，必须事先取得版权所有者的单独书面许可。详见 [PolyForm Noncommercial License 1.0.0](LICENSE)。由于禁止商业用途，本项目属于 **source-available**，不是 OSI 定义的开源软件。
@@ -177,29 +179,47 @@ Lite 版不启用此通道：其 Manifest 没有 `com.airsim.phonecontrol.CLOUD_
 
 ## 快速开始
 
-### 当前发布基线
+### 当前版本
 
-| 组件 | 当前版本或地址 |
+**本 fork 的两个 Android 变体**（由本仓库构建）：
+
+| 变体 | 版本 | versionCode | 能力 |
+| --- | --- | --- | --- |
+| AirSim-LDev | `V0.9.7.2 LDev 911` | `91` | VoWLAN + VoBLE + 云端 Relay |
+| AirSim-Lite-LDev | `AirSim-Lite V0.9.7.2 LDev 1` | `91` | 仅 VoWLAN |
+
+**上游发布基线**（历史归档，仅作追溯，不是本 fork 的构建产物）：
+
+| 组件 | 上游版本 |
 | --- | --- |
-| Android Standalone / AVF Bridge · Android 10–13 修复 APK | [`v0.9.7.2 (91)`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.2)，推荐安装 Standalone |
-| iPhone / Apple Watch App | `0.9.7 (91)`，随 [v0.9.7.2](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.2) 提供 full／sideload unsigned IPA；TestFlight 单独上传处理 |
-| Android AVF Linux Agent | [`v0.4.6`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.4.6)（Debian 包版本 `0.4.6-1`） |
-| AirSIM Relay | `0.2.1` · [`https://airsim-push.remotepilot.site`](https://airsim-push.remotepilot.site/healthz) |
+| 上游 Android Standalone / AVF Bridge | [`v0.9.7.2 (91)`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.2) |
+| 上游 iOS / watchOS App | `0.9.7 (91)`，unsigned IPA 需自行重签 |
+| Android AVF Linux Agent | [`v0.4.6`](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.4.6)（Debian `0.4.6-1`） |
+| AirSIM Relay | `0.2.1` · `https://airsim-push.remotepilot.site` |
 | DJOneHub Relay | `https://push.remotepilot.site`（独立服务，AirSIM 不得使用） |
 
-### 应用发布包
+> 上表中的 Relay 与 AVF Agent 属于**上游 AirSIM** 体系。本 fork 的 AirSim-Lite-LDev 不启用云端 Relay；
+> AirSim-LDev 虽保留 Relay 客户端，但仍使用上游维护者部署的实例，不提供第三方接入承诺。
 
-当前版为 [Apps v0.9.7.2（91）](docs/releases/0.9.7.2.md)，包含以下旧系统修复及其后续稳定性改动。公开 IPA 需自行重签；优先选 Standalone APK，不需更新 Linux Agent。旧版本说明保留作为历史记录。
+### 上游发布档案（历史归档）
+
+以下内容描述的是**上游 AirSIM** 的发布历史，不是本 fork 两个变体的当前状态。
+保留这些记录是为了追溯 VoWLAN/Relay 能力的来源。
+
+当前上游版为 [Apps v0.9.7.2（91）](docs/releases/0.9.7.2.md)，包含旧系统修复及其后续稳定性改动。公开 IPA 需自行重签；旧版本说明保留作为历史记录。
 
 #### Android 10–13 专用修复版
 
-[AirSIM v0.9.7.1 — Android 10–13 修复版，推荐安装](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.1)。新安装优先选择 `AirSIM-Android-Standalone-0.9.7.1-Android10-13.apk`：内置 Agent，不需要 AVF Linux；正式签名构建可覆盖同证书的 Standalone 并保留数据，版本号由 80 升至 81。不要先卸载或清除配对数据；其他证书的 Debug/第三方重签版不能直接覆盖。旧 AVF 部署可选择同版 AVF Bridge APK，但不需要更新 Linux Agent。
+[AirSIM v0.9.7.1 — Android 10–13 修复版](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7.1)。上游提供 `AirSIM-Android-Standalone-0.9.7.1-Android10-13.apk`：内置 Agent，不需要 AVF Linux；正式签名构建可覆盖同证书的 Standalone 并保留数据。不要先卸载或清除配对数据；其他证书的 Debug/第三方重签版不能直接覆盖。
 
 修复旧系统缺少 Java 方法导致的启动、日志/闪退报告读取、权限申请，以及 VoWLAN、Relay、PCM 读取路径崩溃。替换 `ByteArrayOutputStream.toString(Charset)`、`InputStream.readNBytes` 和 `Collection.toArray(IntFunction)`，构建时检查编译产物，防止这些调用重新进入 APK。未降低 `targetSdk`，未移除权限或蓝牙功能；面向 10–13 发布不表示禁止更高系统安装，也不保证厂商通话音频能力。
 
-Redmi M2004J19C（Android 12）已保留数据安装修复包，用户确认 VoBLE 配对正常；最新双端云端通话实测反馈「挂断后不再重现通话页，声音更稳」。iOS 配对页新增仅控制本次配对的本地开关，并修复云端异步挂断竞态。vivo Android 11、Android 10/13 及 realme 尚未完成本轮修复包真机验收，短信与双向音频仍须按机型验证。公开 IPA 需自行重签，TestFlight 上传不等于审核通过。详情见 [发布说明](docs/releases/0.9.7.1-android10-13.md)。
+Redmi M2004J19C（Android 12）已保留数据安装修复包，用户确认 VoBLE 配对正常；双端云端通话实测反馈「挂断后不再重现通话页，声音更稳」。vivo Android 11、Android 10/13 及 realme 尚未完成本轮修复包真机验收，短信与双向音频仍须按机型验证。详情见 [发布说明](docs/releases/0.9.7.1-android10-13.md)。
 
-[AirSIM Apps v0.9.7](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7) 引入独立 VoBLE 蓝牙模式、可用拨号路由优先级、配对设备管理与当前 SIM 身份刷新；修复蓝牙通话音频、重连和挂断竞态，并增加 Android 默认通话卡、闪退报告分享及 Shizuku 启动引导。Release 同时提供 AVF Bridge APK、Standalone APK 与 unsigned IPA；正式 iOS build `80` 另行上传 TestFlight。摘要、验收边界、安装和重签步骤见 [v0.9.7 发布说明](docs/releases/0.9.7.md)。
+[AirSIM Apps v0.9.7](https://github.com/kai-wu-cortex/AirSIM/releases/tag/v0.9.7) 引入独立 VoBLE 蓝牙模式、可用拨号路由优先级、配对设备管理与当前 SIM 身份刷新；修复蓝牙通话音频、重连和挂断竞态，并增加 Android 默认通话卡、闪退报告分享及 Shizuku 启动引导。摘要与验收边界见 [v0.9.7 发布说明](docs/releases/0.9.7.md)。
+
+> **本 fork 的对应关系**：上述 VoBLE 能力已并入 AirSim-LDev；AirSim-Lite-LDev 移除了 VoBLE 与云端 Relay。
+> Android 10–13 的 API 兼容修复对两个变体均有效。
 
 ### 1. 准备开发环境
 
@@ -207,7 +227,7 @@ Redmi M2004J19C（Android 12）已保留数据安装修复包，用户确认 VoB
 - Android 构建：JDK 17、Android SDK Platform 35 与 Build Tools 35。
 - Apple 构建：Xcode；工程最低目标为 iOS 16.3 和 watchOS 10。
 - Agent 构建：Go 1.24。
-- Relay 部署：Node.js 20 或更新版本、Cloudflare Wrangler，以及部署者自己的 Cloudflare 和 Apple Developer 资源。
+- Relay 部署（仅 AirSim-LDev 需要）：Node.js 20 或更新版本、Cloudflare Wrangler，以及部署者自己的 Cloudflare 和 Apple Developer 资源。
 
 ### 2. 构建 Android Standalone APK
 
@@ -293,7 +313,7 @@ AirSIM 不附带原作者的 Apple Developer Team、App ID、证书或 provision
 1. 将主 App 的 `com.example.airsim` 替换为自己控制的唯一 Bundle ID。
 2. 将 Watch App 和 Live Activity Extension 分别设置为主 Bundle ID 加 `.watchkitapp` 与 `.liveactivity`。
 3. 使用自己的 Apple Developer Team、开发/分发证书与 provisioning profile 重新签名。
-4. 在 Relay 中把 `ALLOWED_BUNDLE_ID` 设置为同一个主 App Bundle ID。
+4. 若使用云端 Relay（仅 AirSim-LDev），在 Relay 中把 `ALLOWED_BUNDLE_ID` 设置为同一个主 App Bundle ID。
 5. 分别验证 APNs sandbox 与 production 环境中的 PushKit、通知、Watch 和 Live Activity topic。
 
 只替换签名证书而保留他人的 Bundle ID，不能获得对应 App ID 或 APNs topic 的权限。
@@ -302,29 +322,40 @@ AirSIM 不附带原作者的 Apple Developer Team、App ID、证书或 provision
 
 | 文档 | 适用场景 |
 | --- | --- |
-| [Android Standalone APK](android-standalone/README.md) | 推荐安装、构建、签名、HyperOS 权限、迁移与真机验收 |
+| [AirChat 客户端](AirChat/README.md) | Android / macOS 客户端构建、版本号约定与协议关系 |
+| [**AirChat 协议契约**](docs/airchat-protocol.md) | **客户端与桥接端的唯一协议事实来源**：配对、HMAC、端点、PCM、版本协商 |
+| [Android Standalone APK](android-standalone/README.md) | 两个变体的构建、签名、能力差异、安装冲突与真机验收 |
 | [旧三星 Android 控制 App](android/phone-control-app/README.md) | AVF 兼容模式、默认电话角色、配对与厂商兼容性 |
 | [三星通话音频桥](android/phone-audio-bridge/README.md) | Shizuku 音频桥构建、运行和 PCM 边界 |
-| [Android AVF Agent](module/module-agent/README.md) | Agent 配置、API、安全与启动探针 |
-| [AVF Debian 发布](module/packaging/README.md) | `.deb` 构建、签名、首次安装、升级与回滚 |
-| [AVF 安装与无损排障](docs/AVF_INSTALL_GUIDE.md) | Terminal、控制令牌、双服务健康检查与启动冲突恢复 |
+| [Android AVF Agent](module/module-agent/README.md) | （上游）Agent 配置、API、安全与启动探针 |
+| [AVF Debian 发布](module/packaging/README.md) | （上游）`.deb` 构建、签名、首次安装、升级与回滚 |
+| [AVF 安装与无损排障](docs/AVF_INSTALL_GUIDE.md) | （上游）Terminal、控制令牌、双服务健康检查 |
 | [iOS 与 watchOS](iOS/README.md) | Xcode、Bundle ID、Apple 签名、CallKit、PushKit 与真机测试 |
-| [Cloudflare Relay](push-relay-worker/README.md) | Wrangler、KV、Durable Objects、APNs、Secret 与自定义域名 |
+| [Cloudflare Relay](push-relay-worker/README.md) | （上游，仅 AirSim-LDev）Wrangler、KV、Durable Objects、APNs |
 | [VoWLAN 设计](docs/2026-09-11-vowlan-design.md) | 本地传输设计与协议边界 |
-| [VoBLE 真机测试矩阵](docs/voble-real-device-test-matrix.md) | 蓝牙模式配置、自动化结果、设备矩阵与尚未完成的硬件验收 |
+| [VoBLE 真机测试矩阵](docs/voble-real-device-test-matrix.md) | （仅 AirSim-LDev）蓝牙模式配置、设备矩阵与硬件验收 |
 | [三星热点配对协议](docs/samsung-hotspot-pairing-protocol.md) | 配对、密钥派生、HMAC 与防重放 |
 | [Codex 部署辅助](codex.md) | 面向 Codex 的全项目构建、验证与部署规则 |
 | [Claude 部署辅助](claude.md) | 面向 Claude 的全项目操作顺序与安全约束 |
 | [通用 LLM 上下文](LLM.txt) | 供其他 AI 工具读取的机器友好项目契约 |
 
+> 标注「上游」的文档描述上游 AirSIM 的设计与实现，其中部分能力在 AirSim-Lite-LDev 中不提供。
+
 ## 全项目验证
 
 ```sh
+# AirChat 客户端（独立开发）
+(cd AirChat/Android && ./gradlew assembleDebug)
+(cd AirChat/MacOS && swift run AirSIMCoreSmoke)
+
+# Android Standalone 两个变体
 ./android-standalone/AirSim-LDev/test.sh
 ./android-standalone/AirSim-Lite-LDev/test.sh
 ./android/phone-control-app/test.sh
 ./android/phone-audio-bridge/build.sh
 ./android/phone-control-app/build.sh
+
+# 上游组件
 (cd module/module-agent && go test ./...)
 (cd module/avf-installerd && go test ./...)
 ./module/packaging/test.sh
@@ -347,7 +378,16 @@ xcodebuild -project iOS/AirSIM.xcodeproj -scheme AirSIM \
 
 ## 项目状态
 
-AirSIM 当前处于主动开发阶段。仓库已整合 Android Standalone、旧 AVF Agent / Installer、iOS / watchOS 与 Cloudflare Relay 源码，并提供本地自动化验证。Android Standalone 已在小米 HyperOS 真机完成默认电话角色、VoWLAN 配对和双向通话音频验证；Apple 正式签名、更多 Android 厂商兼容性、后台推送与长期稳定性仍需各部署者在自己的环境中验证。
+本仓库包含四类内容，成熟度各自独立：
+
+| 类别 | 状态 |
+| --- | --- |
+| 上游 AirSIM | 上游持续开发中；本仓库跟随其代码，但不改其版本号与发布说明 |
+| AirSim-LDev / AirSim-Lite-LDev | 两个变体均可构建并通过本地测试；**尚未完成真机验收**（安装、默认电话角色、Shizuku、VoWLAN 实际通话与双向音频） |
+| AirChat iOS（`iOS/`） | 基于上游 iOS 改造，构建可用；Apple 正式签名、TestFlight 与真机推送待验证 |
+| AirChat Android / macOS | 独立开发；两端均可构建（Android `V0.2.0 LDev` / macOS `V0.2.1 LDev`），macOS 冒烟测试通过；**未完成与桥接端的真机联合验收** |
+
+上游记录的真机结果（如小米 HyperOS 的默认电话角色、VoWLAN 配对与双向通话音频）来自上游作者的验证环境，**不代表本 fork 的变体已复现**。
 
 ## 项目趋势
 
