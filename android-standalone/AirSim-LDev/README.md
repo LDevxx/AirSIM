@@ -1,6 +1,6 @@
 # AirSim-LDev —— Android Standalone 完整修改版
 
-本目录是 [android-standalone](../README.md) 下的**完整修改版**变体，基于上游 Android Standalone 修改而来。
+本目录是 [android-standalone](../README.md) 下的**完整修改版**变体，基于上游 `v0.9.7.2` 的稳定通信能力（通话拦截、Shizuku `UserService`、PCM 媒体桥）做深度定制增强。
 
 | 项目 | 值 |
 | --- | --- |
@@ -8,7 +8,87 @@
 | versionName | `V0.9.7.2 LDev 911` |
 | versionCode | `91` |
 | 上游基线 | `0.9.7.2` |
-| 修改次数 | `911` |
+
+## 相对上游的增强
+
+以下四项均在 `git diff v0.9.7.2..HEAD` 中可核实。**上游原有的网关路由一条未删**，全部为叠加式扩展。
+
+### 1. 新增 DSDS 双卡卡槽管理（上游完全没有）
+
+上游只读取 `SubscriptionManager.getDefaultVoiceSubscriptionId()`，没有卡槽枚举能力。本版本新增两个源文件：
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `SIMSlotManager.java` | 326 | 卡槽探测、匹配与拨号参数生成 |
+| `SIMSlotInfo.java` | 52 | 卡槽数据模型 |
+
+能力清单：
+
+- `getActiveSlots()` 枚举所有活跃 SIM/eSIM
+- `getSlotByIndex()` / `getSlotBySubId()` 双路查找
+- `slotForCall()` / `slotForSMS()` / `slotForAccountHandle()` 按场景匹配
+- `dialExtrasForCommand()` 生成 Telecom 拨号参数
+- `registerChangeListener()` 监听卡槽热插拔
+
+对应新增路由：`/api/android/sims`、`/api/v2/sims`
+
+> **边界**：尚未完成真机验收；JVM 测试仅有 `SIMSlotManagerTests`，覆盖范围有限。
+
+### 2. 扩展远程直连与时钟校准
+
+**Tailscale 说明**：上游 `v0.9.7.2` **已内置** Tailscale 支持（`VoWLANNetworkPolicy` 识别 `tun` / `tailscale` 接口，
+`PairingServer` 已有 Tailscale 配对地址提示）。本版本的改动属于**扩展**而非修复：
+
+- 把 overlay 判定扩展到 WireGuard（`wg`）接口
+- 统一走 `isOverlayIPv4()` 判断，避免散落各处
+
+**时钟偏移校准是本版本新增**：
+
+```
+上游 v0.9.7.2：/pair/v1/info 无 server_time 字段
+本版本     ：返回 server_time，客户端据此计算 clockOffsetMillis
+```
+
+用途：设备时钟漂移会导致 HMAC 签名时间戳超出服务端 60 秒容差而失败。客户端用服务端时间校正后即可正常签名。
+
+对应提交：`7909425 fix: precise clock offset via server_time in /pair/v1/info`
+
+### 3. 新增 LD 2.0 集群接口（上游完全没有）
+
+上游网关提供 23 个路由，本版本提供 32 个，**移除 0 个**。新增的 9 个：
+
+| 路由 | 方法 | 用途 |
+| --- | --- | --- |
+| `/api/android/sims` | GET | 卡槽列表 |
+| `/api/v2/sims` | GET | v2 卡槽（集群用） |
+| `/api/v2/sms` | GET | v2 短信列表 |
+| `/api/v2/sms/send` | POST | v2 短信发送（支持指定卡槽） |
+| `/api/v2/calls/dial` | POST | v2 拨号（回传 Android 权威 `call_id`） |
+| `/api/v2/calls/hangup` | POST | v2 挂断 |
+| `/api/v2/calls/reject` | POST | v2 拒接 |
+| `/api/v2/ring_group/answer` | POST | 振铃组接听 |
+| `/api/v2/cluster/events` | GET | 集群事件长轮询 |
+
+这些接口供 **AirChat macOS** 的虚拟卡池与集群功能使用。协议细节见 [AirChat 协议契约](../../docs/airchat-protocol.md)。
+
+### 4. 视觉系统与命名体系规范化
+
+- 墨金 `#C2A878` / 天蓝 `#2563EB` 双主题
+- SIM 卡图标全套密度（48–192 dpi + anydpi-v26）
+- 全项目面向用户文案由 `iPhone` 统一为 `AirChat`
+- 设置页重构：配对入口集中到「设置 → 配对连接」
+- `MainActivity.java` 净增约 1055 行 UI 代码
+
+### 5. 能力探测机制（上游没有）
+
+新增 `FeatureFlags.java`（80 行），从 Manifest 读取能力开关：
+
+```java
+FeatureFlags.voBLEAvailable(context)       // 是否声明 VoBLEGatewayService
+FeatureFlags.cloudRelayAvailable(context)  // 是否有 CLOUD_RELAY meta-data
+```
+
+这让两个变体能共用同一份源码，Lite 版无需维护第二套代码。
 
 ## 能力范围
 

@@ -22,6 +22,22 @@
 | 完整修改版 | [`android-standalone/AirSim-LDev/`](android-standalone/AirSim-LDev/README.md) | `V0.9.7.2 LDev 911` | VoWLAN + VoBLE 蓝牙 + 云端 Relay | `dist/AirSIM-V0.9.7.2-LDev-911.apk` |
 | **Lite 轻量版** | [`android-standalone/AirSim-Lite-LDev/`](android-standalone/AirSim-Lite-LDev/README.md) | `AirSim-Lite V0.9.7.2 LDev 1` | 仅 VoWLAN | `dist/AirSim-Lite V0.9.7.2 LDev 1.apk` |
 
+### 相对上游 v0.9.7.2 的增强
+
+两个变体都基于上游稳定通信能力（通话拦截、Shizuku `UserService`、PCM 媒体桥）做定制。以下改动在 `git diff v0.9.7.2..HEAD` 中可核实，**上游网关路由一条未删**（23 → 32，全部叠加）：
+
+| 增强项 | 上游状态 | 本 fork 状态 | 说明 |
+| --- | --- | --- | --- |
+| **DSDS 双卡卡槽管理** | ❌ 仅读默认卡 | ✅ 完整枚举 | `SIMSlotManager` 326 行 + `SIMSlotInfo` 52 行；支持指定卡槽拨号/发信、热插拔监听 |
+| **LD 2.0 集群接口** | ❌ 无 | ✅ 9 个新路由 | `/api/v2/sims`、`/api/v2/cluster/events`、`/api/v2/ring_group/answer` 等，供 AirChat macOS 使用 |
+| **时钟偏移校准** | ❌ 无 `server_time` | ✅ 新增 | `/pair/v1/info` 返回服务端时间，客户端校正设备时钟漂移，避免 HMAC 签名超时失效 |
+| **WireGuard overlay 判定** | 仅 `tun` / `tailscale` | ✅ 扩展到 `wg` | **上游已内置 Tailscale 支持**，本版本属扩展而非修复 |
+| **能力探测机制** | ❌ 硬编码 | ✅ `FeatureFlags` | 从 Manifest 读能力开关，支撑双变体共用源码 |
+| **视觉与命名体系** | — | ✅ 规范化 | 墨金/天蓝双主题、SIM 卡图标、`iPhone` → `AirChat` 文案统一 |
+
+> **验收边界**：上游已有真机反馈（小米 HyperOS 默认电话角色、VoWLAN 配对、双向通话音频）；
+> 本 fork 的两个变体**尚未真机验收**，且新增 3497 行源码仅对应 `SIMSlotManagerTests` 一个业务测试。
+
 Lite 版不声明 `VoBLEGatewayService`、蓝牙权限与 `CLOUD_RELAY` meta-data；运行时由 `FeatureFlags` 读取 Manifest 判断能力，因此蓝牙配对 UI、蓝牙诊断卡与云端心跳会自动关闭，无需维护两套源码。
 
 两个变体包名相同、`versionCode` 均为 `91`，**不能共存，也不能互相覆盖升级**，切换需先卸载并重新配对。
