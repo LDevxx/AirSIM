@@ -22,9 +22,10 @@ assert_contains "$MANIFEST" 'package="com.airsim.phonecontrol.standalone"' \
   'standalone package id is missing'
 assert_contains "$MANIFEST" 'android:versionCode="91"' \
   'standalone version code does not match the current candidate build'
-# 本仓库为 Local&Direct 修改版：版本号在上游 0.9.7.2 之后追加 _LD-MOD 标识。
-assert_contains "$MANIFEST" 'android:versionName="0.9.7.2_LD-MOD"' \
-  'standalone version name does not match the Apps release'
+# 本仓库为 Local&Direct 修改版：版本名 = `AirSim-Lite V<上游版本> LDev <打包次数>`。
+# 只固定上游基线与 Lite/LDev 约定，避免每次提升打包次数都要改断言。
+assert_contains "$MANIFEST" 'android:versionName="AirSim-Lite V0.9.7.2 LDev' \
+  'standalone version name does not match the AirSim-Lite release'
 assert_contains "$MANIFEST" 'com.airsim.phonecontrol.STANDALONE_AGENT' \
   'standalone runtime flag is missing'
 assert_contains "$MANIFEST" 'com.airsim.phonecontrol.StandaloneAgentService' \
@@ -52,7 +53,6 @@ JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Ho
 export JAVA_HOME
 
 "$ROOT/build.sh" >/dev/null
-sh "$ROOT/../android/phone-control-app/test-gateway-lifecycle.sh"
 APK="$ROOT/build/android/AirSIM-Android-Standalone-debug.apk"
 APKANALYZER=${APKANALYZER:-$(command -v apkanalyzer || true)}
 if [ -z "$APKANALYZER" ] && [ -x "$HOME/Library/Android/sdk/cmdline-tools/latest/bin/apkanalyzer" ]; then

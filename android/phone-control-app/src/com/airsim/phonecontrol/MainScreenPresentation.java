@@ -3,32 +3,13 @@ package com.airsim.phonecontrol;
 public final class MainScreenPresentation {
     private MainScreenPresentation() {}
 
-    public static String connectionModeTitle(
-            boolean vowlanReady,
-            boolean cloudEnabled,
-            boolean relayConfigured,
-            String lastError) {
-        if (vowlanReady) return "VoWLAN 模式";
-        if (cloudEnabled && relayConfigured && lastError != null && !lastError.isBlank()) {
-            return "云端链路异常";
-        }
-        if (cloudEnabled && relayConfigured) return "云端模式";
-        if (cloudEnabled) return "云端尚未配置";
-        return "VoWLAN 未连接";
+    public static String connectionModeTitle(boolean vowlanReady) {
+        return vowlanReady ? "VoWLAN 模式" : "VoWLAN 未连接";
     }
 
-    public static String connectionModeDetail(
-            boolean vowlanReady,
-            boolean cloudEnabled,
-            boolean relayConfigured,
-            String lastError) {
+    public static String connectionModeDetail(boolean vowlanReady) {
         if (vowlanReady) return "局域网控制与 PCM 已就绪；通话优先走 VoWLAN";
-        if (cloudEnabled && relayConfigured && lastError != null && !lastError.isBlank()) {
-            return "Relay / Agent 最近错误：" + lastError;
-        }
-        if (cloudEnabled && relayConfigured) return "云端 Relay 已配置，等待 Agent 心跳验证";
-        if (cloudEnabled) return "云端已开启，但 Relay 或设备注册不完整";
-        return "请连接同一 Wi-Fi / 热点，或开启并配置云端 Relay";
+        return "请让 AirChat 与本机连接同一 Wi-Fi / 热点，并在设置中重新配对";
     }
 
     public static String formatPairingCode(String code) {
@@ -36,19 +17,6 @@ public final class MainScreenPresentation {
         String digits = code.replaceAll("[^0-9]", "");
         if (digits.length() != 6) return "--- ---";
         return digits.substring(0, 3) + " " + digits.substring(3);
-    }
-
-    public static String voBLEAuthenticationStatus(
-            boolean credentialStored, boolean authenticated, String pairingCode) {
-        if (authenticated) return "已认证并连接";
-        if (!"--- ---".equals(formatPairingCode(pairingCode))) return "请在两端核对安全码";
-        if (credentialStored) return "已保存认证凭据 · 等待 AirChat 连接";
-        return "等待 AirChat 发起首次配对";
-    }
-
-    public static String voBLEPairingCode(String pairingCode) {
-        String formatted = formatPairingCode(pairingCode);
-        return "--- ---".equals(formatted) ? "等待 AirChat 发起配对" : formatted;
     }
 
     public static String recentLogLines(String log, String filter, int maximum) {

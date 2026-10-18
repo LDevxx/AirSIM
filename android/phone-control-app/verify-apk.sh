@@ -18,6 +18,15 @@ case "$permissions" in
   *moe.shizuku.manager.permission.API_V23*) ;;
   *) echo "FAIL: Shizuku API permission missing from APK" >&2; exit 1 ;;
 esac
+# AirSim-Lite：蓝牙与云端 Relay 已移除，APK 不允许再申请蓝牙权限或声明 VoBLE 服务。
+case "$permissions" in
+  *android.permission.BLUETOOTH*)
+    echo "FAIL: AirSim-Lite must not request Bluetooth permissions" >&2; exit 1 ;;
+esac
+case "$manifest" in
+  *VoBLEGatewayService*)
+    echo "FAIL: AirSim-Lite must not declare the VoBLE gateway service" >&2; exit 1 ;;
+esac
 case "$manifest" in
   *moe.shizuku.client.V3_SUPPORT*) ;;
   *) echo "FAIL: Shizuku V3 client marker missing from APK" >&2; exit 1 ;;
