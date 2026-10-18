@@ -104,9 +104,13 @@ public final class PairingServer implements Closeable {
         }
         if (lines.length > 0 && "GET /pair/v1/info HTTP/1.1".equals(lines[0])) {
             // Same public, short-lived material as Bonjour TXT. Never reveal code or credentials.
+            // server_time lets the client correct its clock skew before signing requests;
+            // without it a device clock drift can push every HMAC timestamp outside the
+            // server tolerance and the pairing succeeds while all later calls 401.
             respond(peer, 200, new JSONObject().put("product", "airsim-pair").put("version", 1)
                     .put("session_id", created.id()).put("server_public_key", PairingCrypto.base64URL(created.publicKey()))
-                    .put("expires_at", created.expiresAtMillis()).toString());
+                    .put("expires_at", created.expiresAtMillis())
+                    .put("server_time", System.currentTimeMillis()).toString());
             return false;
         }
         if (lines.length == 0 || !"POST /pair/v1/claim HTTP/1.1".equals(lines[0])) {
