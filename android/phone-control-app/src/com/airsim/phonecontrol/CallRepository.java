@@ -115,8 +115,14 @@ public final class CallRepository {
             if (command.number.isEmpty()) return ActionResult.failure("number missing");
             String error = TelecomInvocation.run(
                     task -> new Handler(Looper.getMainLooper()).post(task),
-                    () -> context.getSystemService(TelecomManager.class).placeCall(
-                            Uri.parse("tel:" + command.number), DefaultCallAccount.dialExtras(context)),
+                    () -> {
+                        // Honour an explicit slot when the caller supplied one; otherwise
+                        // keep the upstream behaviour of following the system default card.
+                        android.os.Bundle dialExtras =
+                                SIMSlotManager.dialExtrasForCommand(context, command);
+                        context.getSystemService(TelecomManager.class).placeCall(
+                                Uri.parse("tel:" + command.number), dialExtras);
+                    },
                     2_000L);
             return error.isEmpty() ? ActionResult.success() : ActionResult.failure(error);
         }

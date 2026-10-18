@@ -115,6 +115,10 @@ mkdir -p "$OUT"
   "$ROOT"/test/android/telephony/PhoneNumberUtils.java \
   "$ROOT"/test/android/telephony/SubscriptionManager.java \
   "$ROOT"/test/android/telephony/SubscriptionInfo.java \
+  "$ROOT"/test/android/telephony/SmsManager.java \
+  "$ROOT"/test/org/json/JSONException.java \
+  "$ROOT"/test/org/json/JSONObject.java \
+  "$ROOT"/test/org/json/JSONArray.java \
   "$ROOT"/test/android/content/Context.java \
   "$ROOT"/test/android/net/Uri.java \
   "$ROOT"/test/android/os/Looper.java \
@@ -154,6 +158,8 @@ mkdir -p "$OUT"
   "$ROOT"/src/com/airsim/phonecontrol/AgentCommand.java \
   "$ROOT"/src/com/airsim/phonecontrol/CallRepository.java \
   "$ROOT"/src/com/airsim/phonecontrol/DefaultCallAccount.java \
+  "$ROOT"/src/com/airsim/phonecontrol/SIMSlotInfo.java \
+  "$ROOT"/src/com/airsim/phonecontrol/SIMSlotManager.java \
   "$ROOT"/src/com/airsim/phonecontrol/CloudCallTarget.java \
   "$ROOT"/src/com/airsim/phonecontrol/AgentCommandDispatcher.java \
   "$ROOT"/src/com/airsim/phonecontrol/SMSPayloadPolicy.java \
@@ -201,6 +207,7 @@ mkdir -p "$OUT"
   "$ROOT"/test/com/airsim/phonecontrol/NotificationUpdateGateTests.java \
   "$ROOT"/test/com/airsim/phonecontrol/CallRepositoryTests.java \
   "$ROOT"/test/com/airsim/phonecontrol/DefaultCallAccountTests.java \
+  "$ROOT"/test/com/airsim/phonecontrol/SIMSlotManagerTests.java \
   "$ROOT"/test/com/airsim/phonecontrol/ShizukuStartupPolicyTests.java
 "$JAVAC" --release 17 -cp "$OUT" -d "$OUT" \
   "$ROOT"/src/com/airsim/phonecontrol/AndroidAgentIdentity.java \
@@ -213,6 +220,7 @@ sh "$ROOT/test-voble-gatt.sh"
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.NotificationUpdateGateTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.CallRepositoryTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.DefaultCallAccountTests
+"$JAVA" -cp "$OUT" com.airsim.phonecontrol.SIMSlotManagerTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.AndroidAgentIdentityTests
 "$JAVA" -cp "$OUT" com.airsim.phonecontrol.ShizukuStartupPolicyTests
 

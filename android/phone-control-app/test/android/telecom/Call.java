@@ -1,5 +1,7 @@
 package android.telecom;
 
+import android.os.Bundle;
+
 public class Call {
     public static final int STATE_DIALING = 1;
     public static final int STATE_RINGING = 2;
@@ -28,6 +30,8 @@ public class Call {
         Details(int direction, String number) { this.direction = direction; handle = android.net.Uri.parse("tel:" + number); }
         public int getCallDirection() { return direction; }
         public android.net.Uri getHandle() { return handle; }
+        public PhoneAccountHandle getAccountHandle() { return null; }
+        public Bundle getExtras() { return null; }
     }
     public Call(int state, int direction, String number) { this.state = state; details = new Details(direction, number); }
     public Details getDetails() { return details; }
